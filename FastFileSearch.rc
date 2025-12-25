@@ -1,0 +1,45 @@
+#include "resource.h"
+#include <winres.h>
+
+IDD_MAINDIALOG DIALOGEX 0, 0, 450, 300
+STYLE DS_SETFONT | DS_CENTER | WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN
+CAPTION "Fast File Search (MFT)"
+MENU IDR_MAINMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    EDITTEXT        IDC_EDIT_QUERY, 175, 7, 205, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Search Filename:", IDC_STATIC_FILENAME, 115, 9, 60, 8
+    PUSHBUTTON      "Search", IDC_BTN_SEARCH, 385, 7, 50, 14
+    
+    LTEXT           "Language:", IDC_STATIC, 7, 9, 35, 8
+    COMBOBOX        IDC_COMBO_LANG, 45, 7, 60, 30, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    
+    LTEXT           "Search Candidates:", IDC_STATIC_TARGETS, 7, 25, 80, 8
+    LISTBOX         IDC_LIST_TARGETS, 7, 35, 370, 50, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_BORDER | WS_TABSTOP
+    PUSHBUTTON      "Add Folder", IDC_BTN_ADD, 385, 35, 50, 14
+    PUSHBUTTON      "Not candidate", IDC_BTN_REMOVE, 385, 55, 50, 14
+    
+    CONTROL         "",IDC_LIST_RESULTS,"SysListView32", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP, 7, 90, 436, 185
+    
+    PUSHBUTTON      "Save Results", IDC_BTN_SAVE, 7, 280, 60, 14
+    LTEXT           "Ready", IDC_STATUS, 75, 283, 360, 8
+END
+
+IDR_MENU1 MENU
+BEGIN
+    POPUP "Context"
+    BEGIN
+        MENUITEM "Copy Path", ID_POPUP_COPYPATH
+    END
+END
+
+IDR_MAINMENU MENU
+BEGIN
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About...", ID_HELP_ABOUT
+    END
+END
+
+// Manifest to request admin privileges
+1 RT_MANIFEST "app.manifest"
