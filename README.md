@@ -53,7 +53,12 @@ test_console.exe [Options] [Drive] [Query]
 - `-v`: **Verbose Mode**. Prints every filename found in the MFT. Useful for checking if files are being seen at all.
 - `-t`: **Trace Mode**. Prints detailed execution stages (Volume Open, MFT Header Read, Run Decoding). Use this to debug initialization or "RecordSize=0" errors.
 
+
+
 **Examples:**
 - `test_console.exe D: ws` (Search for "ws" on D:)
 - `test_console.exe -t D:` (Trace MFT reading on D:)
 - `test_console.exe -v C: notes` (Search "notes" on C: and print ALL files found)
+
+
+This program is created with me and by dialogue with gemini3 and Antigravity.
