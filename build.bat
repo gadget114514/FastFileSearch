@@ -17,8 +17,8 @@ if %errorlevel% neq 0 (
 )
 
 :: Compile and Link
-cl /nologo /O2 /EHsc /DUNICODE /D_UNICODE ^
-    main.cpp MFTReader.cpp FastFileSearch.res ^
+cl /nologo /O2 /EHsc /DUNICODE /D_UNICODE /std:c++17 ^
+    main.cpp MFTReader.cpp FatReader.cpp exFatReader.cpp FastFileSearch.res ^
     /FeFastFileSearch.exe ^
     /link user32.lib comctl32.lib comdlg32.lib kernel32.lib advapi32.lib shell32.lib ^
     /MANIFEST:EMBED /MANIFESTINPUT:app.manifest

@@ -1,0 +1,391 @@
+#include "FatReader.h"
+#include <algorithm>
+#include <iostream>
+
+FatReader::FatReader() : hVolume(INVALID_HANDLE_VALUE), currentDrive(0) {}
+FatReader::~FatReader() { Close(); }
+
+void FatReader::SetError(const std::wstring &msg) {
+  DWORD err = GetLastError();
+  LPVOID lpMsgBuf;
+  FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+                     FORMAT_MESSAGE_IGNORE_INSERTS,
+                 NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                 (LPWSTR)&lpMsgBuf, 0, NULL);
+  lastError = msg + L": " + (lpMsgBuf ? (wchar_t *)lpMsgBuf : L"Unknown Error");
+  if (lpMsgBuf)
+    LocalFree(lpMsgBuf);
+}
+
+void FatReader::Close() {
+  if (hVolume != INVALID_HANDLE_VALUE) {
+    CloseHandle(hVolume);
+    hVolume = INVALID_HANDLE_VALUE;
+  }
+  fileMap.clear();
+  fatCache.clear();
+}
+
+std::wstring FatReader::GetLastErrorMessage() const { return lastError; }
+
+bool FatReader::Initialize(TCHAR driveLetter) {
+  Close();
+  currentDrive = driveLetter;
+
+  std::wstring path = L"\\\\.\\";
+  path += driveLetter;
+  path += L":";
+
+  hVolume = CreateFileW(path.c_str(), GENERIC_READ,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
+                        0, NULL);
+  if (hVolume == INVALID_HANDLE_VALUE) {
+    SetError(L"Failed to open volume");
+    return false;
+  }
+
+  uint8_t bootSector[512];
+  DWORD bytesRead;
+  if (!ReadFile(hVolume, bootSector, 512, &bytesRead, NULL) ||
+      bytesRead != 512) {
+    SetError(L"Failed to read boot sector");
+    return false;
+  }
+
+  FAT16_BPB *bpb16 = (FAT16_BPB *)bootSector;
+  bytesPerSector = bpb16->BytesPerSector;
+  sectorsPerCluster = bpb16->SectorsPerCluster;
+  reservedSectors = bpb16->ReservedSectors;
+  fatCount = bpb16->Fats;
+
+  if (bpb16->SectorsPerFat != 0) {
+    // FAT12/16
+    isFat32 = false;
+    sectorsPerFat = bpb16->SectorsPerFat;
+    rootDirEntries = bpb16->RootEntries;
+    rootDirSectors =
+        ((rootDirEntries * 32) + (bytesPerSector - 1)) / bytesPerSector;
+    firstDataSector =
+        reservedSectors + (fatCount * sectorsPerFat) + rootDirSectors;
+  } else {
+    // FAT32
+    isFat32 = true;
+    FAT32_BPB *bpb32 = (FAT32_BPB *)bootSector;
+    sectorsPerFat = bpb32->SectorsPerFat32;
+    rootDirEntries = 0;
+    rootDirSectors = 0;
+    rootCluster = bpb32->RootCluster;
+    firstDataSector = reservedSectors + (fatCount * sectorsPerFat);
+  }
+
+  // Load FAT for fast traversal
+  LoadFat();
+
+  return true;
+}
+
+void FatReader::LoadFat() {
+  if (hVolume == INVALID_HANDLE_VALUE)
+    return;
+
+  uint64_t fatOffset = (uint64_t)reservedSectors * bytesPerSector;
+  uint32_t fatSize = sectorsPerFat * bytesPerSector;
+
+  fatCache.resize(fatSize);
+
+  LARGE_INTEGER li;
+  li.QuadPart = fatOffset;
+  SetFilePointerEx(hVolume, li, NULL, FILE_BEGIN);
+
+  DWORD bytesRead;
+  ReadFile(hVolume, fatCache.data(), fatSize, &bytesRead, NULL);
+}
+
+uint32_t FatReader::GetNextCluster(uint32_t cluster) {
+  if (isFat32) {
+    if (cluster * 4 + 4 > fatCache.size())
+      return 0x0FFFFFFF;
+    uint32_t next = *(uint32_t *)(&fatCache[cluster * 4]);
+    return next & 0x0FFFFFFF;
+  } else {
+    if (cluster * 2 + 2 > fatCache.size())
+      return 0xFFFF;
+    uint32_t next = *(uint16_t *)(&fatCache[cluster * 2]);
+    return next;
+  }
+}
+
+uint64_t FatReader::ClusterToSector(uint32_t cluster) {
+  return firstDataSector + (uint64_t)(cluster - 2) * sectorsPerCluster;
+}
+
+bool FatReader::Scan(int codePage, void (*progressCallback)(int, int, void *),
+                     void *userData,
+                     std::function<void(const std::wstring &)> onFileFound) {
+  if (hVolume == INVALID_HANDLE_VALUE)
+    return false;
+
+  // Root directory
+  if (isFat32) {
+    ProcessDirectory(rootCluster, 0, L"", codePage);
+  } else {
+    // FAT16 Root is fixed
+    uint64_t rootOffset =
+        (uint64_t)(reservedSectors + (fatCount * sectorsPerFat)) *
+        bytesPerSector;
+    uint32_t rootSize = rootDirEntries * 32;
+    std::vector<uint8_t> buffer(rootSize);
+
+    LARGE_INTEGER li;
+    li.QuadPart = rootOffset;
+    SetFilePointerEx(hVolume, li, NULL, FILE_BEGIN);
+
+    DWORD bytesRead;
+    ReadFile(hVolume, buffer.data(), rootSize, &bytesRead, NULL);
+
+    // Manual processing of root buffer since it's not a cluster chain
+    std::wstring lfn = L"";
+    for (uint32_t i = 0; i < rootSize; i += 32) {
+      FAT_DIRECTORY_ENTRY *de = (FAT_DIRECTORY_ENTRY *)&buffer[i];
+      if (de->Name[0] == 0x00)
+        break;
+      if (de->Name[0] == 0xE5) {
+        lfn = L"";
+        continue;
+      }
+
+      if (de->Attributes == FAT_ATTR_LFN) {
+        FAT_LFN_ENTRY *le = (FAT_LFN_ENTRY *)de;
+        wchar_t part[14] = {0};
+        memcpy(part, le->Name1, 10);
+        memcpy(part + 5, le->Name2, 12);
+        memcpy(part + 11, le->Name3, 4);
+        lfn = std::wstring(part) + lfn;
+        continue;
+      }
+
+      if (de->Attributes & FAT_ATTR_VOLUME_ID) {
+        lfn = L"";
+        continue;
+      }
+
+      Entry entry;
+      entry.FirstCluster =
+          de->FirstClusterLow | ((uint32_t)de->FirstClusterHigh << 16);
+      entry.ParentFirstCluster = 0;
+
+      if (!lfn.empty()) {
+        // Trim trailing nulls or 0xFFFF from LFN
+        size_t last = lfn.find_first_of(L"\0\xFFFF");
+        if (last != std::wstring::npos)
+          lfn.resize(last);
+        entry.Name = lfn;
+      } else {
+        // SFN conversion (handled later in Search or here?)
+        // Let's store SFN raw and convert in Search or provide a helper
+        char sfn[13];
+        int p = 0;
+        for (int j = 0; j < 8; j++)
+          if (de->Name[j] != ' ')
+            sfn[p++] = de->Name[j];
+        if (de->Name[8] != ' ') {
+          sfn[p++] = '.';
+          for (int j = 8; j < 11; j++)
+            if (de->Name[j] != ' ')
+              sfn[p++] = de->Name[j];
+        }
+        sfn[p] = 0;
+
+        int len = MultiByteToWideChar(codePage, 0, sfn, -1, NULL, 0);
+        wchar_t *wname = new wchar_t[len];
+        MultiByteToWideChar(codePage, 0, sfn, -1, wname, len);
+        entry.Name = wname;
+        delete[] wname;
+      }
+
+      entry.Size = de->FileSize;
+      entry.IsDirectory = (de->Attributes & FAT_ATTR_DIRECTORY) != 0;
+      entry.IsValid = true;
+
+      // Note: For empty files, FirstCluster is 0.
+      // We need a unique ID. Let's use cluster * 1000000 + offset? No.
+      // Let's use a counter for now or just the path as key if needed.
+      // Actually, let's use a synthetic ID if FirstCluster is 0.
+      uint32_t id = entry.FirstCluster;
+      if (id == 0)
+        id = 0x80000000 + i;
+
+      fileMap[id] = entry;
+      lfn = L"";
+
+      if (entry.IsDirectory && entry.FirstCluster != 0) {
+        ProcessDirectory(entry.FirstCluster, 0, entry.Name, codePage);
+      }
+    }
+  }
+
+  return true;
+}
+
+void FatReader::ProcessDirectory(uint32_t cluster, uint32_t parentCluster,
+                                 const std::wstring &parentPath, int codePage) {
+  uint32_t current = cluster;
+  std::wstring lfn = L"";
+  std::vector<uint8_t> buffer(bytesPerSector * sectorsPerCluster);
+
+  while (current < (uint32_t)(isFat32 ? 0x0FFFFFF8 : 0xFFF8)) {
+    uint64_t sector = ClusterToSector(current);
+    LARGE_INTEGER li;
+    li.QuadPart = sector * bytesPerSector;
+    SetFilePointerEx(hVolume, li, NULL, FILE_BEGIN);
+
+    DWORD bytesRead;
+    if (!ReadFile(hVolume, buffer.data(), (DWORD)buffer.size(), &bytesRead,
+                  NULL))
+      break;
+
+    for (uint32_t i = 0; i < bytesRead; i += 32) {
+      FAT_DIRECTORY_ENTRY *de = (FAT_DIRECTORY_ENTRY *)&buffer[i];
+      if (de->Name[0] == 0x00)
+        return; // End of dir
+      if (de->Name[0] == 0xE5) {
+        lfn = L"";
+        continue;
+      } // Deleted
+
+      if (de->Attributes == FAT_ATTR_LFN) {
+        FAT_LFN_ENTRY *le = (FAT_LFN_ENTRY *)de;
+        wchar_t part[14] = {0};
+        memcpy(part, le->Name1, 10);
+        memcpy(part + 5, le->Name2, 12);
+        memcpy(part + 11, le->Name3, 4);
+        lfn = std::wstring(part) + lfn;
+        continue;
+      }
+
+      if (de->Attributes & FAT_ATTR_VOLUME_ID) {
+        lfn = L"";
+        continue;
+      }
+
+      // Skip "." and ".."
+      if (de->Name[0] == '.') {
+        lfn = L"";
+        continue;
+      }
+
+      Entry entry;
+      entry.FirstCluster =
+          de->FirstClusterLow | ((uint32_t)de->FirstClusterHigh << 16);
+      entry.ParentFirstCluster = cluster;
+
+      if (!lfn.empty()) {
+        size_t last = lfn.find_first_of(L"\0\xFFFF");
+        if (last != std::wstring::npos)
+          lfn.resize(last);
+        entry.Name = lfn;
+      } else {
+        char sfn[13];
+        int p = 0;
+        for (int j = 0; j < 8; j++)
+          if (de->Name[j] != ' ')
+            sfn[p++] = de->Name[j];
+        if (de->Name[8] != ' ') {
+          sfn[p++] = '.';
+          for (int j = 8; j < 11; j++)
+            if (de->Name[j] != ' ')
+              sfn[p++] = de->Name[j];
+        }
+        sfn[p] = 0;
+
+        int len = MultiByteToWideChar(codePage, 0, sfn, -1, NULL, 0);
+        wchar_t *wname = new wchar_t[len];
+        MultiByteToWideChar(codePage, 0, sfn, -1, wname, len);
+        entry.Name = wname;
+        delete[] wname;
+      }
+
+      entry.Size = de->FileSize;
+      entry.IsDirectory = (de->Attributes & FAT_ATTR_DIRECTORY) != 0;
+      entry.IsValid = true;
+
+      uint32_t id = entry.FirstCluster;
+      if (id == 0)
+        id = 0x80000000 + (uint32_t)fileMap.size(); // Simplified synthetic ID
+
+      fileMap[id] = entry;
+      lfn = L"";
+
+      if (entry.IsDirectory && entry.FirstCluster != 0) {
+        ProcessDirectory(entry.FirstCluster, cluster,
+                         parentPath + L"\\" + entry.Name, codePage);
+      }
+    }
+
+    current = GetNextCluster(current);
+  }
+}
+
+std::wstring FatReader::BuildPath(const Entry &entry) {
+  std::wstring path = entry.Name;
+  uint32_t pc = entry.ParentFirstCluster;
+  while (pc != 0) {
+    auto it = fileMap.find(pc);
+    if (it == fileMap.end())
+      break;
+    path = it->second.Name + L"\\" + path;
+    pc = it->second.ParentFirstCluster;
+  }
+  std::wstring drive = L"";
+  drive += currentDrive;
+  drive += L":\\";
+  return drive + path;
+}
+
+bool FatReader::MatchPattern(const std::wstring &str,
+                             const std::wstring &pattern) {
+  std::wstring s = str;
+  std::wstring p = pattern;
+  for (auto &c : s)
+    c = towlower(c);
+  for (auto &c : p)
+    c = towlower(c);
+  return s.find(p) != std::wstring::npos;
+}
+
+std::vector<FileResult> FatReader::Search(const std::wstring &query,
+                                          const std::wstring &targetFolder,
+                                          int codePage, bool caseSensitive,
+                                          int maxResults) {
+  std::vector<FileResult> results;
+  for (auto const &[id, entry] : fileMap) {
+    if (MatchPattern(entry.Name, query)) {
+      std::wstring fullPath = BuildPath(entry);
+
+      if (!targetFolder.empty()) {
+        if (fullPath.length() < targetFolder.length())
+          continue;
+        bool match = true;
+        for (size_t i = 0; i < targetFolder.length(); ++i) {
+          if (towlower(fullPath[i]) != towlower(targetFolder[i])) {
+            match = false;
+            break;
+          }
+        }
+        if (!match)
+          continue;
+      }
+
+      FileResult res;
+      res.Name = entry.Name;
+      res.FullPath = fullPath;
+      res.Size = entry.Size;
+      res.LastWriteTime = 0; // Simplified
+      res.IsDirectory = entry.IsDirectory;
+      results.push_back(res);
+      if (maxResults > 0 && (int)results.size() >= maxResults)
+        break;
+    }
+  }
+  return results;
+}

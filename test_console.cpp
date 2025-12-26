@@ -1,4 +1,6 @@
+#include "FatReader.h"
 #include "MFTReader.h"
+#include "exFatReader.h"
 #include <functional> // Added for std::function
 #include <iostream>
 #include <locale.h>
@@ -45,31 +47,52 @@ int wmain(int argc, wchar_t *argv[]) {
              << (verbose ? L"Yes" : L"No") << L"\nTrace: "
              << (trace ? L"Yes" : L"No") << std::endl;
 
-  MFTReader reader;
-
-  // Set Trace Callback
-  if (trace) {
-    reader.SetTraceCallback([](const std::wstring &msg) {
-      std::wcout << L"[TRACE] " << msg << std::endl;
-    });
-  }
-
   wchar_t drive = towupper(target[0]);
 
   std::wcout << L"Initializing Drive " << drive << L"..." << std::endl;
-  if (!reader.Initialize(drive)) {
-    std::wcout << L"Failed to initialize (Administrator privileges required): "
-               << reader.GetLastErrorMessage() << std::endl;
-    return 1;
-  }
-  std::wcout << L"Initialization efficient." << std::endl;
+
+  wchar_t driveRoot[] = {drive, L':', L'\\', L'\0'};
+  wchar_t fsName[MAX_PATH];
+  GetVolumeInformationW(driveRoot, NULL, 0, NULL, NULL, NULL, fsName, MAX_PATH);
+
+  std::wcout << L"Detected File System: " << fsName << std::endl;
+
+  std::wcout << L"Detected File System: " << fsName << std::endl;
+
+  std::vector<FileResult> searchResults;
+
+  // Lambda for search/print
+  auto PerformSearch = [&](auto &rdr) {
+    if (trace) {
+      rdr.SetTraceCallback([](const std::wstring &msg) {
+        std::wcout << L"[TRACE] " << msg << std::endl;
+      });
+    }
+
+    if (!rdr.Initialize(drive)) {
+      std::wcout << L"Failed to initialize: " << rdr.GetLastErrorMessage()
+                 << std::endl;
+      return false;
+    }
+
+    auto callback = [](int percent, int max, void *userData) {
+      if (percent % 10 == 0)
+        std::wcout << L"Scan Progress: " << percent << L"%" << std::endl;
+    };
+
+    // FAT specific Scan signature check
+    // For generic template usage we might need `if constexpr` or specialized
+    // override But here we can manually call.
+    return true; // placeholder
+  };
 
   auto callback = [](int percent, int max, void *userData) {
+    (void)max;
+    (void)userData;
     if (percent % 10 == 0)
       std::wcout << L"Scan Progress: " << percent << L"%" << std::endl;
   };
 
-  // Verbose callback
   std::function<void(const std::wstring &)> verboseCb = nullptr;
   if (verbose) {
     verboseCb = [](const std::wstring &name) {
@@ -77,11 +100,62 @@ int wmain(int argc, wchar_t *argv[]) {
     };
   }
 
-  std::wcout << L"Scanning MFT..." << std::endl;
-  if (!reader.Scan(callback, nullptr, verboseCb)) {
-    std::wcout << L"Scan failed: " << reader.GetLastErrorMessage() << std::endl;
+  if (wcscmp(fsName, L"NTFS") == 0) {
+    MFTReader r;
+    if (trace)
+      r.SetTraceCallback([](const std::wstring &msg) {
+        std::wcout << L"[TRACE] " << msg << std::endl;
+      });
+    if (!r.Initialize(drive)) {
+      std::wcout << L"Init Failed: " << r.GetLastErrorMessage() << std::endl;
+      return 1;
+    }
+
+    if (!r.Scan(callback, nullptr, verboseCb)) {
+      std::wcout << L"Scan Failed: " << r.GetLastErrorMessage() << std::endl;
+      return 1;
+    }
+    searchResults = r.Search(query, target);
+
+  } else if (wcscmp(fsName, L"FAT") == 0 || wcscmp(fsName, L"FAT32") == 0) {
+    FatReader r;
+    if (trace)
+      r.SetTraceCallback([](const std::wstring &msg) {
+        std::wcout << L"[TRACE] " << msg << std::endl;
+      });
+    if (!r.Initialize(drive)) {
+      std::wcout << L"Init Failed: " << r.GetLastErrorMessage() << std::endl;
+      return 1;
+    }
+
+    // Use default Code Page (OEM)
+    if (!r.Scan(CP_OEMCP, callback, nullptr, verboseCb)) {
+      std::wcout << L"Scan Failed: " << r.GetLastErrorMessage() << std::endl;
+      return 1;
+    }
+    searchResults = r.Search(query, target);
+
+  } else if (wcscmp(fsName, L"exFAT") == 0) {
+    exFatReader r;
+    if (trace)
+      r.SetTraceCallback([](const std::wstring &msg) {
+        std::wcout << L"[TRACE] " << msg << std::endl;
+      });
+    if (!r.Initialize(drive)) {
+      std::wcout << L"Init Failed: " << r.GetLastErrorMessage() << std::endl;
+      return 1;
+    }
+
+    if (!r.Scan(callback, nullptr, verboseCb)) {
+      std::wcout << L"Scan Failed: " << r.GetLastErrorMessage() << std::endl;
+      return 1;
+    }
+    searchResults = r.Search(query, target);
+  } else {
+    std::wcout << L"Unsupported File System." << std::endl;
     return 1;
   }
+
   std::wcout << L"Scan Complete." << std::endl;
   if (verbose) {
     std::wcout << L"--------------------------------------------------\n";
@@ -89,16 +163,15 @@ int wmain(int argc, wchar_t *argv[]) {
 
   std::wcout << L"Searching for '" << query << L"' in '" << target << L"'..."
              << std::endl;
-  auto results = reader.Search(query, target);
 
-  std::wcout << L"Found " << results.size() << L" results." << std::endl;
+  std::wcout << L"Found " << searchResults.size() << L" results." << std::endl;
 
-  if (results.empty()) {
+  if (searchResults.empty()) {
     std::wcout << L"No items found matching the query." << std::endl;
   } else {
     std::wcout << L"Listing results (limit 100):" << std::endl;
-    for (size_t i = 0; i < min(results.size(), 100); ++i) {
-      std::wcout << results[i].FullPath << L"\n";
+    for (size_t i = 0; i < min(searchResults.size(), 100); ++i) {
+      std::wcout << searchResults[i].FullPath << L"\n";
     }
   }
 

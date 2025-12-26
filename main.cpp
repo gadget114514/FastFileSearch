@@ -1,12 +1,13 @@
 #define WIN32_LEAN_AND_MEAN
-#define UNICODE
-#define _UNICODE
+#include "FatReader.h"
 #include "MFTReader.h"
+#include "exFatReader.h"
 #include "resource.h"
 #include <atomic>
 #include <commctrl.h>
 #include <commdlg.h>
 #include <fstream>
+
 #if 0
 #include <iomanip>
 #endif
@@ -24,11 +25,14 @@
 // Globals
 HINSTANCE hInstBuffer;
 MFTReader mftReader;
+FatReader fatReader;
+exFatReader exFatReaderObj;
 std::vector<FileResult> searchResults;
 std::atomic<bool> isSearching(false);
 HWND hList = NULL;
 HWND hTargetList = NULL;
 int currentLang = 0; // 0=English, 1=Japanese
+int currentCodePage = CP_OEMCP;
 std::vector<std::wstring> searchTargets;
 
 // Sorting Globals
@@ -134,6 +138,9 @@ void UpdateLanguage(HWND hDlg) {
   ListView_SetColumn(hList, 2, &lvc);
   lvc.pszText = (LPWSTR)STR_COL_SIZE[currentLang];
   ListView_SetColumn(hList, 3, &lvc);
+
+  SetDlgItemTextW(hDlg, IDC_STATIC_CP,
+                  currentLang == 0 ? L"Code Page:" : L"コードページ:");
 }
 
 void ScanThread(void *param) {
@@ -159,8 +166,32 @@ void ScanThread(void *param) {
   bool anySuccess = false;
 
   for (wchar_t drive : drivesToScan) {
-    if (mftReader.Initialize(drive)) {
-      if (mftReader.Scan(callback, hDlg)) {
+    wchar_t driveRoot[] = {drive, L':', L'\\', L'\0'};
+    wchar_t fsName[MAX_PATH];
+    bool fsOk = GetVolumeInformationW(driveRoot, NULL, 0, NULL, NULL, NULL,
+                                      fsName, MAX_PATH);
+
+    if (fsOk) {
+      bool scanSuccess = false;
+      bool isNtfs = (wcscmp(fsName, L"NTFS") == 0);
+      bool isFat =
+          (wcscmp(fsName, L"FAT") == 0 || wcscmp(fsName, L"FAT32") == 0);
+      bool isExFat = (wcscmp(fsName, L"exFAT") == 0);
+
+      if (isNtfs) {
+        if (mftReader.Initialize(drive) && mftReader.Scan(callback, hDlg))
+          scanSuccess = true;
+      } else if (isFat) {
+        if (fatReader.Initialize(drive) &&
+            fatReader.Scan(currentCodePage, callback, hDlg))
+          scanSuccess = true;
+      } else if (isExFat) {
+        if (exFatReaderObj.Initialize(drive) &&
+            exFatReaderObj.Scan(callback, hDlg))
+          scanSuccess = true;
+      }
+
+      if (scanSuccess) {
         std::vector<std::wstring> driveTargets;
         for (const auto &t : searchTargets) {
           if (t.length() >= 3 && towupper(t[0]) == drive) {
@@ -169,7 +200,15 @@ void ScanThread(void *param) {
         }
 
         for (const auto &targetFolder : driveTargets) {
-          auto results = mftReader.Search(query, targetFolder, false, 50000);
+          std::vector<FileResult> results;
+          if (isNtfs)
+            results = mftReader.Search(query, targetFolder, false, 50000);
+          else if (isFat)
+            results = fatReader.Search(query, targetFolder, currentCodePage,
+                                       false, 50000);
+          else if (isExFat)
+            results = exFatReaderObj.Search(query, targetFolder, false, 50000);
+
           searchResults.insert(searchResults.end(), results.begin(),
                                results.end());
           if (searchResults.size() >= 50000)
@@ -333,6 +372,11 @@ void SaveConfig(HWND hDlg) {
                              std::to_wstring(currentLang).c_str(),
                              iniPath.c_str());
 
+  // Save Code Page
+  WritePrivateProfileStringW(L"Settings", L"CodePage",
+                             std::to_wstring(currentCodePage).c_str(),
+                             iniPath.c_str());
+
   // Clear old Targets
   WritePrivateProfileStringW(L"Targets", NULL, NULL, iniPath.c_str());
 
@@ -369,6 +413,10 @@ void LoadConfig(HWND hDlg) {
       GetPrivateProfileIntW(L"Settings", L"Language", 0, iniPath.c_str());
   if (currentLang < 0 || currentLang > 1)
     currentLang = 0;
+
+  // Load Code Page
+  currentCodePage = GetPrivateProfileIntW(L"Settings", L"CodePage", CP_OEMCP,
+                                          iniPath.c_str());
 
   // Load Targets
   searchTargets.clear();
@@ -692,6 +740,30 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
                        (LPARAM)L"Japanese");
     SendDlgItemMessage(hDlg, IDC_COMBO_LANG, CB_SETCURSEL, 0, 0);
 
+    // Setup Code Pages
+    HWND hCP = GetDlgItem(hDlg, IDC_COMBO_CP);
+    SendMessage(hCP, CB_ADDSTRING, 0, (LPARAM)L"Auto (OEM)");
+    SendMessage(hCP, CB_SETITEMDATA, 0, (LPARAM)CP_OEMCP);
+    SendMessage(hCP, CB_ADDSTRING, 0, (LPARAM)L"Japanese (932)");
+    SendMessage(hCP, CB_SETITEMDATA, 1, (LPARAM)932);
+    SendMessage(hCP, CB_ADDSTRING, 0, (LPARAM)L"Western (1252)");
+    SendMessage(hCP, CB_SETITEMDATA, 2, (LPARAM)1252);
+    SendMessage(hCP, CB_ADDSTRING, 0, (LPARAM)L"Simplified Chinese (936)");
+    SendMessage(hCP, CB_SETITEMDATA, 3, (LPARAM)936);
+    SendMessage(hCP, CB_ADDSTRING, 0, (LPARAM)L"Traditional Chinese (950)");
+    SendMessage(hCP, CB_SETITEMDATA, 4, (LPARAM)950);
+    SendMessage(hCP, CB_ADDSTRING, 0, (LPARAM)L"UTF-8 (65001)");
+    SendMessage(hCP, CB_SETITEMDATA, 5, (LPARAM)CP_UTF8);
+
+    // Select current CP
+    SendMessage(hCP, CB_SETCURSEL, 0, 0); // Default to Auto
+    for (int i = 0; i < (int)SendMessage(hCP, CB_GETCOUNT, 0, 0); ++i) {
+      if ((int)SendMessage(hCP, CB_GETITEMDATA, i, 0) == currentCodePage) {
+        SendMessage(hCP, CB_SETCURSEL, i, 0);
+        break;
+      }
+    }
+
     // Initial Default: Add C:\ drive?
     // Load Config
     LoadConfig(hDlg);
@@ -769,12 +841,21 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
       currentLang =
           SendDlgItemMessage(hDlg, IDC_COMBO_LANG, CB_GETCURSEL, 0, 0);
       UpdateLanguage(hDlg);
+    } else if (id == IDC_COMBO_CP && HIWORD(wParam) == CBN_SELCHANGE) {
+      int idx = (int)SendDlgItemMessage(hDlg, IDC_COMBO_CP, CB_GETCURSEL, 0, 0);
+      currentCodePage =
+          (int)SendDlgItemMessage(hDlg, IDC_COMBO_CP, CB_GETITEMDATA, idx, 0);
     } else if (id == ID_POPUP_COPYPATH) {
     } else if (id == ID_HELP_ABOUT) {
-      MessageBoxW(hDlg,
-                  L"Fast File Search v1.0\n\nHigh-performance NTFS MFT Search "
-                  L"Tool.\n\nUse MFT direct access for instant results.",
-                  L"About", MB_OK | MB_ICONINFORMATION);
+      MessageBoxW(
+          hDlg,
+          L"Fast File Search v1.1\n\nHigh-performance File Search Tool.\n\n"
+          L"Supports:\n"
+          L"- NTFS (Direct MFT Access)\n"
+          L"- FAT16/FAT32 (Direct Volume Access)\n"
+          L"- exFAT (Direct Volume Access)\n\n"
+          L"Scans raw disk structures for maximum speed.",
+          L"About", MB_OK | MB_ICONINFORMATION);
     } else if (id == IDCANCEL) {
       SaveConfig(hDlg);
       EndDialog(hDlg, 0);

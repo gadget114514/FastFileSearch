@@ -344,6 +344,12 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp" />
     <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h" />
     <ClInclude Include="D:\ws\FastFileSearch\NtfsStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\FatReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\FatReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\FatStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\exFatReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\exFatReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\exFatStructs.h" />
     <ClInclude Include="D:\ws\FastFileSearch\resource.h" />
     <ResourceCompile Include="D:\ws\FastFileSearch\FastFileSearch.rc" />
   </ItemGroup>

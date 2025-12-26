@@ -1,5 +1,8 @@
 #ifndef RESOURCE_H
 #define RESOURCE_H
+#include <windows.h>
+
+#define IDC_STATIC -1
 
 #define IDD_MAINDIALOG 101
 #define IDI_ICON1 102
@@ -18,6 +21,8 @@
 #define IDC_BTN_ADD 1011
 #define IDC_BTN_REMOVE 1012
 #define IDC_STATIC_TARGETS 1013
+#define IDC_COMBO_CP 1014
+#define IDC_STATIC_CP 1015
 
 #define ID_POPUP_COPYPATH 40001
 #define ID_HELP_ABOUT 40002

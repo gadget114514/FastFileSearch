@@ -9,6 +9,12 @@ add_executable(FastFileSearch WIN32
     MFTReader.cpp
     MFTReader.h
     NtfsStructs.h
+    FatReader.cpp
+    FatReader.h
+    FatStructs.h
+    exFatReader.cpp
+    exFatReader.h
+    exFatStructs.h
     resource.h
     FastFileSearch.rc
     app.manifest
@@ -43,6 +49,12 @@ add_executable(test_console
     MFTReader.cpp
     MFTReader.h
     NtfsStructs.h
+    FatReader.cpp
+    FatReader.h
+    FatStructs.h
+    exFatReader.cpp
+    exFatReader.h
+    exFatStructs.h
 )
 target_link_libraries(test_console
     kernel32

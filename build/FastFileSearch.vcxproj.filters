@@ -7,12 +7,30 @@
     <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\ws\FastFileSearch\FatReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\ws\FastFileSearch\exFatReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\ws\FastFileSearch\NtfsStructs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\ws\FastFileSearch\FatReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\ws\FastFileSearch\FatStructs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\ws\FastFileSearch\exFatReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\ws\FastFileSearch\exFatStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\ws\FastFileSearch\resource.h">
