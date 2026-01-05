@@ -77,4 +77,10 @@ private:
 
   std::vector<uint8_t> fatCache;
   void LoadFat();
+
+  // Progress State
+  uint64_t totalUsedClusters;
+  uint64_t processedClusters;
+  void (*progressCb)(int, int, void *);
+  void *userPtr;
 };

@@ -1,6 +1,8 @@
 #include "resource.h"
 #include <windows.h>
 
+IDI_APP_ICON ICON "app_icon.ico"
+
 IDD_MAINDIALOG DIALOGEX 0, 0, 450, 300
 STYLE DS_SETFONT | DS_CENTER | WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN
 CAPTION "Fast File Search (MFT & FAT)"
@@ -25,7 +27,8 @@ BEGIN
     CONTROL         "",IDC_LIST_RESULTS,"SysListView32", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP, 7, 90, 436, 185
     
     PUSHBUTTON      "Save Results", IDC_BTN_SAVE, 7, 280, 60, 14
-    LTEXT           "Ready", IDC_STATUS, 75, 283, 360, 8
+    LTEXT           "Ready", IDC_STATUS, 75, 283, 150, 8
+    CONTROL         "",IDC_PROGRESS,"msctls_progress32",WS_BORDER, 230, 280, 213, 14
 END
 
 IDR_MENU1 MENU

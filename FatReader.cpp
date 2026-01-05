@@ -99,6 +99,26 @@ void FatReader::LoadFat() {
 
   DWORD bytesRead;
   ReadFile(hVolume, fatCache.data(), fatSize, &bytesRead, NULL);
+
+  // Count Used Clusters
+  totalUsedClusters = 0;
+  if (isFat32) {
+    uint32_t *fat32 = (uint32_t *)fatCache.data();
+    uint32_t count = (uint32_t)fatCache.size() / 4;
+    for (uint32_t i = 2; i < count; i++) {
+      uint32_t val = fat32[i] & 0x0FFFFFFF;
+      if (val != 0 && val != 0x0FFFFFFF && val < 0x0FFFFFF7)
+        totalUsedClusters++;
+    }
+  } else {
+    uint16_t *fat16 = (uint16_t *)fatCache.data();
+    uint32_t count = (uint32_t)fatCache.size() / 2;
+    for (uint32_t i = 2; i < count; i++) {
+      uint16_t val = fat16[i];
+      if (val != 0 && val < 0xFFF7)
+        totalUsedClusters++;
+    }
+  }
 }
 
 uint32_t FatReader::GetNextCluster(uint32_t cluster) {
@@ -125,8 +145,14 @@ bool FatReader::Scan(int codePage, void (*progressCallback)(int, int, void *),
   if (hVolume == INVALID_HANDLE_VALUE)
     return false;
 
+  progressCb = progressCallback;
+  userPtr = userData;
+  processedClusters = 0;
+
   // Root directory
   if (isFat32) {
+    if (totalUsedClusters == 0)
+      totalUsedClusters = 1; // Prevent div/0
     ProcessDirectory(rootCluster, 0, L"", codePage);
   } else {
     // FAT16 Root is fixed
@@ -181,8 +207,7 @@ bool FatReader::Scan(int codePage, void (*progressCallback)(int, int, void *),
           lfn.resize(last);
         entry.Name = lfn;
       } else {
-        // SFN conversion (handled later in Search or here?)
-        // Let's store SFN raw and convert in Search or provide a helper
+        // SFN
         char sfn[13];
         int p = 0;
         for (int j = 0; j < 8; j++)
@@ -207,10 +232,6 @@ bool FatReader::Scan(int codePage, void (*progressCallback)(int, int, void *),
       entry.IsDirectory = (de->Attributes & FAT_ATTR_DIRECTORY) != 0;
       entry.IsValid = true;
 
-      // Note: For empty files, FirstCluster is 0.
-      // We need a unique ID. Let's use cluster * 1000000 + offset? No.
-      // Let's use a counter for now or just the path as key if needed.
-      // Actually, let's use a synthetic ID if FirstCluster is 0.
       uint32_t id = entry.FirstCluster;
       if (id == 0)
         id = 0x80000000 + i;
@@ -224,6 +245,9 @@ bool FatReader::Scan(int codePage, void (*progressCallback)(int, int, void *),
     }
   }
 
+  if (progressCb)
+    progressCb(100, 100, userPtr);
+
   return true;
 }
 
@@ -231,9 +255,19 @@ void FatReader::ProcessDirectory(uint32_t cluster, uint32_t parentCluster,
                                  const std::wstring &parentPath, int codePage) {
   uint32_t current = cluster;
   std::wstring lfn = L"";
-  std::vector<uint8_t> buffer(bytesPerSector * sectorsPerCluster);
+
+  // Calculate cluster size in bytes
+  uint32_t clusterBytes = bytesPerSector * sectorsPerCluster;
+  std::vector<uint8_t> buffer(clusterBytes);
 
   while (current < (uint32_t)(isFat32 ? 0x0FFFFFF8 : 0xFFF8)) {
+    // Progress Update
+    processedClusters++;
+    if (progressCb && (processedClusters % 100 == 0)) {
+      progressCb((int)((processedClusters * 100) / totalUsedClusters), 100,
+                 userPtr);
+    }
+
     uint64_t sector = ClusterToSector(current);
     LARGE_INTEGER li;
     li.QuadPart = sector * bytesPerSector;
@@ -315,6 +349,12 @@ void FatReader::ProcessDirectory(uint32_t cluster, uint32_t parentCluster,
 
       fileMap[id] = entry;
       lfn = L"";
+
+      // If it's a file, we "processed" its clusters by skipping them
+      if (!entry.IsDirectory) {
+        uint32_t fileClusters = (entry.Size + clusterBytes - 1) / clusterBytes;
+        processedClusters += fileClusters;
+      }
 
       if (entry.IsDirectory && entry.FirstCluster != 0) {
         ProcessDirectory(entry.FirstCluster, cluster,

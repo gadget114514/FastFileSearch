@@ -160,7 +160,10 @@ void ScanThread(void *param) {
   }
 
   auto callback = [](int percent, int max, void *userData) {
-    // Optional progress
+    // Post progress message (WM_USER + 3)
+    // wParam = percent
+    HWND hDlg = (HWND)userData;
+    PostMessage(hDlg, WM_USER + 3, (WPARAM)percent, 0);
   };
 
   bool anySuccess = false;
@@ -178,6 +181,9 @@ void ScanThread(void *param) {
           (wcscmp(fsName, L"FAT") == 0 || wcscmp(fsName, L"FAT32") == 0);
       bool isExFat = (wcscmp(fsName, L"exFAT") == 0);
 
+      // Reset Progress for next drive
+      callback(0, 100, hDlg);
+
       if (isNtfs) {
         if (mftReader.Initialize(drive) && mftReader.Scan(callback, hDlg))
           scanSuccess = true;
@@ -190,6 +196,8 @@ void ScanThread(void *param) {
             exFatReaderObj.Scan(callback, hDlg))
           scanSuccess = true;
       }
+
+      callback(100, 100, hDlg); // Ensure 100% at end
 
       if (scanSuccess) {
         std::vector<std::wstring> driveTargets;
@@ -550,11 +558,23 @@ void ResizeLayout(HWND hDlg, int cx, int cy) {
   int bottomY = cy - 35;
   Move(IDC_BTN_SAVE, m, bottomY, 0, 0, false);
 
-  // Status
+  // Status and Progress
   RECT rcSave;
   GetWindowRect(GetDlgItem(hDlg, IDC_BTN_SAVE), &rcSave);
   int statusX = m + (rcSave.right - rcSave.left) + m;
-  Move(IDC_STATUS, statusX, bottomY + 5, cx - statusX - m, 20, true);
+  int availableWidth = cx - statusX - m;
+
+  // Split width: Status gets 60%, Progress gets 40% (approx)
+  int progressW = 150;
+  if (availableWidth > 300)
+    progressW = 200;
+
+  int statusW = availableWidth - progressW - m;
+  if (statusW < 50)
+    statusW = 50; // Min width
+
+  Move(IDC_STATUS, statusX, bottomY + 5, statusW, 20, true);
+  Move(IDC_PROGRESS, statusX + statusW + m, bottomY + 2, progressW, 20, true);
 }
 
 LRESULT DrawItemWithHighlight(LPNMLVCUSTOMDRAW lplvcd, HWND hDlg) {
@@ -687,6 +707,16 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
     // Stage 1 Fix: Ensure no capture immediately and LOCKDOWN the list view
     ReleaseCapture();
 
+    // Set Icon
+    HICON hIconBig =
+        (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
+                         IMAGE_ICON, 32, 32, 0);
+    HICON hIconSmall =
+        (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
+                         IMAGE_ICON, 16, 16, 0);
+    SendMessage(hDlg, WM_SETICON, ICON_BIG, (LPARAM)hIconBig);
+    SendMessage(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+
     isStartupGuarded = true; // Start guarded
 
     hInstBuffer = GetModuleHandle(NULL);
@@ -784,6 +814,12 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
     // initialization.
     SetFocus(GetDlgItem(hDlg, IDC_EDIT_QUERY));
     return FALSE;
+  }
+  case WM_USER + 3: {
+    // Progress Update
+    // wParam = percent
+    SendDlgItemMessage(hDlg, IDC_PROGRESS, PBM_SETPOS, (WPARAM)wParam, 0);
+    return TRUE;
   }
   case WM_TIMER: {
     if (wParam == 1) {
