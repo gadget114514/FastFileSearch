@@ -1,0 +1,18 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+C:/ws/FastFileSearch/FastFileSearch.rc
+resource.h
+C:/ws/FastFileSearch/resource.h
+windows.h
+-
+
+C:/ws/FastFileSearch/resource.h
+windows.h
+-
+

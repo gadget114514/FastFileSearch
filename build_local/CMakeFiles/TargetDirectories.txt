@@ -1,0 +1,4 @@
+C:/ws/FastFileSearch/build_local/CMakeFiles/FastFileSearch.dir
+C:/ws/FastFileSearch/build_local/CMakeFiles/test_console.dir
+C:/ws/FastFileSearch/build_local/CMakeFiles/edit_cache.dir
+C:/ws/FastFileSearch/build_local/CMakeFiles/rebuild_cache.dir

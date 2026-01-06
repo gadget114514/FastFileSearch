@@ -24,7 +24,7 @@ public:
 
   std::vector<FileResult> Search(const std::wstring &query,
                                  const std::wstring &targetFolder,
-                                 bool caseSensitive = false,
+                                 const SearchOptions &options = SearchOptions(),
                                  int maxResults = -1);
 
   std::wstring GetLastErrorMessage() const;
@@ -63,5 +63,6 @@ private:
 
   uint64_t FatTimestampToWin32(uint32_t timestamp, uint8_t tenMs);
 
-  bool MatchPattern(const std::wstring &str, const std::wstring &pattern);
+  bool MatchPattern(const std::wstring &str, const std::wstring &pattern,
+                    const SearchOptions &options);
 };

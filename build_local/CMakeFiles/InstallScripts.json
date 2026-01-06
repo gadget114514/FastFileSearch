@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/ws/FastFileSearch/build_local/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -1,6 +1,7 @@
 #include "MFTReader.h"
-#include <algorithm>
 #include <iostream>
+#include <regex>
+#include <sstream>
 #include <vector>
 
 // Helper to decode NTFS Data Runs
@@ -461,29 +462,65 @@ std::wstring MFTReader::BuildPath(uint64_t refId) {
 }
 
 bool MFTReader::MatchPattern(const std::wstring &str,
-                             const std::wstring &pattern) {
-  // Simple substring match or wildcard?
-  // User requirement: "specify filename... found filename is added"
-  // Let's do simple substring case-insensitive for now, or prefix?
-  // "wildcard" is standard. A simple implementation:
-  // If no wildcards, Substring match.
-  // Implementing full glob is complex without `PathMatchSpec` (shlwapi).
-  // Let's use `strstr` equivalent.
+                             const std::wstring &pattern,
+                             const SearchOptions &options) {
+  if (pattern.empty())
+    return true;
 
-  std::wstring s = str;
-  std::wstring p = pattern;
-  // ToLower
-  for (auto &c : s)
-    c = towlower(c);
-  for (auto &c : p)
-    c = towlower(c);
+  if (options.mode == MatchMode_Exact) {
+    if (options.ignoreCase) {
+      return lstrcmpiW(str.c_str(), pattern.c_str()) == 0;
+    } else {
+      return wcscmp(str.c_str(), pattern.c_str()) == 0;
+    }
+  }
 
-  return s.find(p) != std::wstring::npos;
+  if (options.mode == MatchMode_RegEx) {
+    try {
+      std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
+      if (options.ignoreCase)
+        flags |= std::regex::icase;
+      std::wregex re(pattern, flags);
+      return std::regex_search(str, re);
+    } catch (...) {
+      return false;
+    }
+  }
+
+  if (options.mode == MatchMode_SpaceDivided) {
+    std::wstringstream ss(pattern);
+    std::wstring token;
+    while (ss >> token) {
+      bool tokenFound = false;
+      if (options.ignoreCase) {
+        auto it = std::search(
+            str.begin(), str.end(), token.begin(), token.end(),
+            [](wchar_t c1, wchar_t c2) { return towlower(c1) == towlower(c2); });
+        tokenFound = (it != str.end());
+      } else {
+        tokenFound = (str.find(token) != std::wstring::npos);
+      }
+      if (!tokenFound)
+        return false;
+    }
+    return true;
+  }
+
+  // Default: Substring
+  if (options.ignoreCase) {
+    auto it = std::search(
+        str.begin(), str.end(), pattern.begin(), pattern.end(),
+        [](wchar_t c1, wchar_t c2) { return towlower(c1) == towlower(c2); });
+    return it != str.end();
+  } else {
+    return str.find(pattern) != std::wstring::npos;
+  }
 }
 
 std::vector<FileResult> MFTReader::Search(const std::wstring &query,
                                           const std::wstring &targetFolder,
-                                          bool caseSensitive, int maxResults) {
+                                          const SearchOptions &options,
+                                          int maxResults) {
   std::vector<FileResult> results;
 
   // Resolve targetFolder to RefID?
@@ -495,39 +532,102 @@ std::vector<FileResult> MFTReader::Search(const std::wstring &query,
     if (!entry.IsValid)
       continue;
 
-    // Check Name
-    if (MatchPattern(entry.Name, query)) {
-      // Reconstruct Path
-      std::wstring fullPath = BuildPath(entry.RefID);
+    // Reconstruct Path
+    std::wstring fullPath = BuildPath(entry.RefID);
 
-      // Check Target Folder
-      if (!targetFolder.empty()) {
-        if (fullPath.length() < targetFolder.length())
-          continue;
+    // Filter by Target Folder
+    if (!targetFolder.empty()) {
+      if (fullPath.length() < targetFolder.length())
+        continue;
 
-        // Case-insensitive prefix check
-        bool match = true;
-        for (size_t i = 0; i < targetFolder.length(); ++i) {
-          if (towlower(fullPath[i]) != towlower(targetFolder[i])) {
-            match = false;
+      // Case-insensitive prefix check
+      bool match = true;
+      for (size_t i = 0; i < targetFolder.length(); ++i) {
+        if (towlower(fullPath[i]) != towlower(targetFolder[i])) {
+          match = false;
+          break;
+        }
+      }
+      if (!match)
+        continue;
+    }
+
+    // Exclusion Filter
+    if (!options.excludePattern.empty()) {
+      bool excluded = false;
+      std::wstring targetForExclude = fullPath;
+      std::wstringstream ss(options.excludePattern);
+      std::wstring pattern;
+      while (std::getline(ss, pattern, L';')) {
+        if (pattern.empty()) continue;
+        if (options.ignoreCase) {
+          std::wstring targetLower = targetForExclude;
+          std::wstring patternLower = pattern;
+          for (auto &c : targetLower) c = towlower(c);
+          for (auto &c : patternLower) c = towlower(c);
+          if (targetLower.find(patternLower) != std::wstring::npos) {
+            excluded = true; break;
+          }
+        } else {
+          if (targetForExclude.find(pattern) != std::wstring::npos) {
+            excluded = true; break;
+          }
+        }
+      }
+      if (excluded) continue;
+    }
+
+    // Match Query (Name or Full Path)
+    if (!MatchPattern(options.matchFullPath ? fullPath : entry.Name, query, options))
+      continue;
+
+    // Metadata Filters
+    if (options.minSize > 0 && entry.Size < options.minSize)
+      continue;
+    if (options.maxSize > 0 && entry.Size > options.maxSize)
+      continue;
+    if (options.minDate > 0 && entry.LastWriteTime < options.minDate)
+      continue;
+    if (options.maxDate > 0 && entry.LastWriteTime > options.maxDate)
+      continue;
+
+    // Type Filter
+    if (entry.IsDirectory) {
+      if (!options.includeFolders) continue;
+    } else {
+      if (!options.includeFiles) continue;
+      
+      // Extension Filter
+      if (!options.extensionFilter.empty()) {
+        bool extMatch = false;
+        size_t dotPos = entry.Name.find_last_of(L'.');
+        std::wstring fileExt = (dotPos != std::wstring::npos) ? entry.Name.substr(dotPos + 1) : L"";
+        for (auto &c : fileExt) c = towlower(c);
+
+        std::wstringstream ss(options.extensionFilter);
+        std::wstring extToken;
+        while (std::getline(ss, extToken, L';')) {
+          if (extToken.empty()) continue;
+          for (auto &c : extToken) c = towlower(c);
+          if (fileExt == extToken) {
+            extMatch = true;
             break;
           }
         }
-        if (!match)
-          continue;
+        if (!extMatch) continue;
       }
-
-      FileResult res;
-      res.Name = entry.Name;
-      res.FullPath = fullPath;
-      res.Size = entry.Size;
-      res.LastWriteTime = entry.LastWriteTime;
-      res.IsDirectory = entry.IsDirectory;
-      results.push_back(res);
-
-      if (maxResults > 0 && (int)results.size() >= maxResults)
-        break;
     }
+
+    FileResult res;
+    res.Name = entry.Name;
+    res.FullPath = fullPath;
+    res.Size = entry.Size;
+    res.LastWriteTime = entry.LastWriteTime;
+    res.IsDirectory = entry.IsDirectory;
+    results.push_back(res);
+
+    if (maxResults > 0 && (int)results.size() >= maxResults)
+      break;
   }
   return results;
 }

@@ -25,7 +25,7 @@ public:
   std::vector<FileResult> Search(const std::wstring &query,
                                  const std::wstring &targetFolder,
                                  int codePage = CP_OEMCP,
-                                 bool caseSensitive = false,
+                                 const SearchOptions &options = SearchOptions(),
                                  int maxResults = -1);
 
   std::wstring GetLastErrorMessage() const;
@@ -73,7 +73,8 @@ private:
   uint64_t ClusterToSector(uint32_t cluster);
 
   std::wstring BuildPath(const Entry &entry);
-  bool MatchPattern(const std::wstring &str, const std::wstring &pattern);
+  bool MatchPattern(const std::wstring &str, const std::wstring &pattern,
+                    const SearchOptions &options);
 
   std::vector<uint8_t> fatCache;
   void LoadFat();

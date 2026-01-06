@@ -1,4 +1,4 @@
-D:\ws\FastFileSearch\test_console.cpp;D:\ws\FastFileSearch\build\test_console.dir\Release\test_console.obj
-D:\ws\FastFileSearch\MFTReader.cpp;D:\ws\FastFileSearch\build\test_console.dir\Release\MFTReader.obj
-D:\ws\FastFileSearch\FatReader.cpp;D:\ws\FastFileSearch\build\test_console.dir\Release\FatReader.obj
-D:\ws\FastFileSearch\exFatReader.cpp;D:\ws\FastFileSearch\build\test_console.dir\Release\exFatReader.obj
+C:\ws\FastFileSearch\test_console.cpp;C:\ws\FastFileSearch\build\test_console.dir\Release\test_console.obj
+C:\ws\FastFileSearch\MFTReader.cpp;C:\ws\FastFileSearch\build\test_console.dir\Release\MFTReader.obj
+C:\ws\FastFileSearch\FatReader.cpp;C:\ws\FastFileSearch\build\test_console.dir\Release\FatReader.obj
+C:\ws\FastFileSearch\exFatReader.cpp;C:\ws\FastFileSearch\build\test_console.dir\Release\exFatReader.obj

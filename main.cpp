@@ -1,4 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <sstream>
 #include "FatReader.h"
 #include "MFTReader.h"
 #include "exFatReader.h"
@@ -16,6 +18,8 @@
 #include <shlobj.h>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <regex>
 #include <windows.h>
 
 #pragma comment(lib, "comctl32.lib")
@@ -34,6 +38,7 @@ HWND hTargetList = NULL;
 int currentLang = 0; // 0=English, 1=Japanese
 int currentCodePage = CP_OEMCP;
 std::vector<std::wstring> searchTargets;
+SearchOptions g_options;
 
 // Sorting Globals
 int sortColumn = -1;
@@ -77,6 +82,7 @@ void LoadConfig(HWND hDlg);
 void ResizeLayout(HWND hDlg, int cx, int cy);
 int CALLBACK CompareFunc(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort);
 std::wstring FormatSize(uint64_t size);
+INT_PTR CALLBACK ConfigDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 // Strings
 const wchar_t *STR_SEARCH[] = {L"Search", L"検索"};
@@ -210,12 +216,12 @@ void ScanThread(void *param) {
         for (const auto &targetFolder : driveTargets) {
           std::vector<FileResult> results;
           if (isNtfs)
-            results = mftReader.Search(query, targetFolder, false, 50000);
+            results = mftReader.Search(query, targetFolder, g_options, 50000);
           else if (isFat)
             results = fatReader.Search(query, targetFolder, currentCodePage,
-                                       false, 50000);
+                                       g_options, 50000);
           else if (isExFat)
-            results = exFatReaderObj.Search(query, targetFolder, false, 50000);
+            results = exFatReaderObj.Search(query, targetFolder, g_options, 50000);
 
           searchResults.insert(searchResults.end(), results.begin(),
                                results.end());
@@ -385,6 +391,41 @@ void SaveConfig(HWND hDlg) {
                              std::to_wstring(currentCodePage).c_str(),
                              iniPath.c_str());
 
+  // Save Search Options
+  WritePrivateProfileStringW(L"SearchOptions", L"Mode",
+                             std::to_wstring((int)g_options.mode).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"IgnoreCase",
+                             std::to_wstring(g_options.ignoreCase ? 1 : 0).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"MinSize",
+                             std::to_wstring(g_options.minSize).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"MaxSize",
+                             std::to_wstring(g_options.maxSize).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"MinDate",
+                             std::to_wstring(g_options.minDate).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"MaxDate",
+                             std::to_wstring(g_options.maxDate).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"IncludeFiles",
+                             std::to_wstring(g_options.includeFiles ? 1 : 0).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"IncludeFolders",
+                             std::to_wstring(g_options.includeFolders ? 1 : 0).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"ExtensionFilter",
+                             g_options.extensionFilter.c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"MatchFullPath",
+                             std::to_wstring(g_options.matchFullPath ? 1 : 0).c_str(),
+                             iniPath.c_str());
+  WritePrivateProfileStringW(L"SearchOptions", L"ExcludePattern",
+                             g_options.excludePattern.c_str(),
+                             iniPath.c_str());
+
   // Clear old Targets
   WritePrivateProfileStringW(L"Targets", NULL, NULL, iniPath.c_str());
 
@@ -425,6 +466,33 @@ void LoadConfig(HWND hDlg) {
   // Load Code Page
   currentCodePage = GetPrivateProfileIntW(L"Settings", L"CodePage", CP_OEMCP,
                                           iniPath.c_str());
+
+  // Load Search Options
+  g_options.mode = (MatchMode)GetPrivateProfileIntW(L"SearchOptions", L"Mode", 0, iniPath.c_str());
+  g_options.ignoreCase = GetPrivateProfileIntW(L"SearchOptions", L"IgnoreCase", 1, iniPath.c_str()) != 0;
+
+  wchar_t valBuf[64];
+  GetPrivateProfileStringW(L"SearchOptions", L"MinSize", L"0", valBuf, 64, iniPath.c_str());
+  g_options.minSize = _wtoi64(valBuf);
+  GetPrivateProfileStringW(L"SearchOptions", L"MaxSize", L"0", valBuf, 64, iniPath.c_str());
+  g_options.maxSize = _wtoi64(valBuf);
+  GetPrivateProfileStringW(L"SearchOptions", L"MinDate", L"0", valBuf, 64, iniPath.c_str());
+  g_options.minDate = _wtoi64(valBuf);
+  GetPrivateProfileStringW(L"SearchOptions", L"MaxDate", L"0", valBuf, 64, iniPath.c_str());
+  g_options.maxDate = _wtoi64(valBuf);
+
+  g_options.includeFiles = GetPrivateProfileIntW(L"SearchOptions", L"IncludeFiles", 1, iniPath.c_str()) != 0;
+  g_options.includeFolders = GetPrivateProfileIntW(L"SearchOptions", L"IncludeFolders", 1, iniPath.c_str()) != 0;
+  
+  wchar_t extBuf[256];
+  GetPrivateProfileStringW(L"SearchOptions", L"ExtensionFilter", L"", extBuf, 256, iniPath.c_str());
+  g_options.extensionFilter = extBuf;
+
+  g_options.matchFullPath = GetPrivateProfileIntW(L"SearchOptions", L"MatchFullPath", 0, iniPath.c_str()) != 0;
+  
+  wchar_t exBuf[256];
+  GetPrivateProfileStringW(L"SearchOptions", L"ExcludePattern", L"", exBuf, 256, iniPath.c_str());
+  g_options.excludePattern = exBuf;
 
   // Load Targets
   searchTargets.clear();
@@ -584,8 +652,7 @@ LRESULT DrawItemWithHighlight(LPNMLVCUSTOMDRAW lplvcd, HWND hDlg) {
 
   // Get Text
   wchar_t textBuf[1024];
-  ListView_GetItemText(lplvcd->nmcd.hdr.hwndFrom, iItem, iSubItem, textBuf,
-                       1024);
+  ListView_GetItemText(lplvcd->nmcd.hdr.hwndFrom, iItem, iSubItem, textBuf, 1024);
   std::wstring text = textBuf;
 
   // Get Query
@@ -593,78 +660,89 @@ LRESULT DrawItemWithHighlight(LPNMLVCUSTOMDRAW lplvcd, HWND hDlg) {
   GetDlgItemTextW(hDlg, IDC_EDIT_QUERY, queryBuf, 256);
   std::wstring query = queryBuf;
 
-  if (query.empty() || text.empty()) {
+  if (query.empty() || text.empty() || iSubItem != 0) {
     return CDRF_DODEFAULT;
   }
 
-  // Check if there is a match at all before custom drawing
+  struct Range { size_t start, len; };
+  std::vector<Range> ranges;
+
   std::wstring textLower = text;
   std::wstring queryLower = query;
-  for (auto &c : textLower)
-    c = towlower(c);
-  for (auto &c : queryLower)
-    c = towlower(c);
-  if (textLower.find(queryLower) == std::wstring::npos)
-    return CDRF_DODEFAULT;
+  if (g_options.ignoreCase) {
+    for (auto &c : textLower) c = towlower(c);
+    for (auto &c : queryLower) c = towlower(c);
+  }
 
-  // Prepare Colors
-  // Check Selection State Explicitly
-  bool isSelected =
-      (ListView_GetItemState(lplvcd->nmcd.hdr.hwndFrom, iItem, LVIS_SELECTED) &
-       LVIS_SELECTED) != 0;
+  // Collect Ranges
+  if (g_options.mode == MatchMode_Exact) {
+    bool match = g_options.ignoreCase ? (lstrcmpiW(text.c_str(), query.c_str()) == 0) : (text == query);
+    if (match) ranges.push_back({0, text.length()});
+  } else if (g_options.mode == MatchMode_SpaceDivided) {
+    std::wstringstream ss(queryLower);
+    std::wstring token;
+    while (ss >> token) {
+      size_t pos = textLower.find(token);
+      while (pos != std::wstring::npos) {
+        ranges.push_back({pos, token.length()});
+        pos = textLower.find(token, pos + 1);
+      }
+    }
+  } else if (g_options.mode == MatchMode_RegEx) {
+    try {
+      std::wregex re(query, (g_options.ignoreCase ? std::regex_constants::icase : (std::regex_constants::syntax_option_type)0) | std::regex_constants::optimize);
+      auto it = std::wsregex_iterator(text.begin(), text.end(), re);
+      auto end = std::wsregex_iterator();
+      for (; it != end; ++it) {
+        ranges.push_back({(size_t)it->position(), (size_t)it->length()});
+      }
+    } catch (...) {}
+  } else { // Substring
+    size_t pos = textLower.find(queryLower);
+    while (pos != std::wstring::npos) {
+      ranges.push_back({pos, query.length()});
+      pos = textLower.find(queryLower, pos + 1);
+    }
+  }
 
-  COLORREF clrText = isSelected ? GetSysColor(COLOR_HIGHLIGHTTEXT)
-                                : GetSysColor(COLOR_WINDOWTEXT);
-  // COLORREF clrBk = isSelected ? GetSysColor(COLOR_HIGHLIGHT) :
-  // GetSysColor(COLOR_WINDOW);
+  if (ranges.empty()) return CDRF_DODEFAULT;
+
+  // Merge Ranges
+  std::sort(ranges.begin(), ranges.end(), [](const Range& a, const Range& b) { return a.start < b.start; });
+  std::vector<Range> merged;
+  for (auto &r : ranges) {
+    if (merged.empty() || r.start > merged.back().start + merged.back().len) {
+      merged.push_back(r);
+    } else {
+      size_t end = std::max(merged.back().start + merged.back().len, r.start + r.len);
+      merged.back().len = end - merged.back().start;
+    }
+  }
+
+  // Draw
+  RECT rc;
+  ListView_GetSubItemRect(lplvcd->nmcd.hdr.hwndFrom, iItem, iSubItem, LVIR_LABEL, &rc);
+  
+  bool isSelected = (ListView_GetItemState(lplvcd->nmcd.hdr.hwndFrom, iItem, LVIS_SELECTED) & LVIS_SELECTED) != 0;
+  COLORREF clrText = isSelected ? GetSysColor(COLOR_HIGHLIGHTTEXT) : GetSysColor(COLOR_WINDOWTEXT);
   COLORREF clrMatchBk = RGB(0, 255, 255); // Cyan
   COLORREF clrMatchText = RGB(0, 0, 0);   // Black
 
-  // Get Rect
-  RECT rc;
-  ListView_GetSubItemRect(lplvcd->nmcd.hdr.hwndFrom, iItem, iSubItem,
-                          LVIR_LABEL, &rc);
-  if (iSubItem == 0) {
-    // Fix for Item 0
-    // LVIR_LABEL might be small if no icon.
-    // Let's use LVIR_BOUNDS and adjust? Or trust LVIR_LABEL.
-    // Usually safe.
-  }
-
-  // Fill Background
-  HBRUSH hFillBr = isSelected ? GetSysColorBrush(COLOR_HIGHLIGHT)
-                              : GetSysColorBrush(COLOR_WINDOW);
+  HBRUSH hFillBr = isSelected ? GetSysColorBrush(COLOR_HIGHLIGHT) : GetSysColorBrush(COLOR_WINDOW);
   FillRect(hdc, &rc, hFillBr);
 
   int oldBkMode = SetBkMode(hdc, TRANSPARENT);
-
-  // Match and Draw
-  size_t pos = 0;
-  size_t found = textLower.find(queryLower, pos);
-
-  int currentX = rc.left + 6; // Padding
-
   HFONT hFont = (HFONT)SendMessage(lplvcd->nmcd.hdr.hwndFrom, WM_GETFONT, 0, 0);
   HGDIOBJ oldFont = SelectObject(hdc, hFont);
 
+  int currentX = rc.left + 6;
   auto DrawSegment = [&](const std::wstring &seg, bool highlight) {
-    if (seg.empty())
-      return;
-
+    if (seg.empty()) return;
     SIZE sz;
     GetTextExtentPoint32W(hdc, seg.c_str(), (int)seg.length(), &sz);
-
-    RECT segRect;
-    segRect.left = currentX;
-    segRect.top = rc.top;
-    segRect.bottom = rc.bottom;
-    segRect.right = currentX + sz.cx;
-
-    // Clip to cell
+    RECT segRect = {currentX, rc.top, currentX + sz.cx, rc.bottom};
     if (segRect.left < rc.right) {
-      if (segRect.right > rc.right)
-        segRect.right = rc.right;
-
+      if (segRect.right > rc.right) segRect.right = rc.right;
       if (highlight) {
         HBRUSH hBr = CreateSolidBrush(clrMatchBk);
         FillRect(hdc, &segRect, hBr);
@@ -673,27 +751,21 @@ LRESULT DrawItemWithHighlight(LPNMLVCUSTOMDRAW lplvcd, HWND hDlg) {
       } else {
         SetTextColor(hdc, clrText);
       }
-
-      RECT drawRc = segRect;
-      DrawTextW(hdc, seg.c_str(), (int)seg.length(), &drawRc,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+      DrawTextW(hdc, seg.c_str(), (int)seg.length(), &segRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
     currentX += sz.cx;
   };
 
-  while (found != std::wstring::npos) {
-    if (found > pos)
-      DrawSegment(text.substr(pos, found - pos), false);
-    DrawSegment(text.substr(found, query.length()), true);
-    pos = found + query.length();
-    found = textLower.find(queryLower, pos);
+  size_t lastPos = 0;
+  for (auto &r : merged) {
+    if (r.start > lastPos) DrawSegment(text.substr(lastPos, r.start - lastPos), false);
+    DrawSegment(text.substr(r.start, r.len), true);
+    lastPos = r.start + r.len;
   }
-  if (pos < text.length())
-    DrawSegment(text.substr(pos), false);
+  if (lastPos < text.length()) DrawSegment(text.substr(lastPos), false);
 
   SelectObject(hdc, oldFont);
   SetBkMode(hdc, oldBkMode);
-
   return CDRF_SKIPDEFAULT;
 }
 
@@ -882,6 +954,11 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
       currentCodePage =
           (int)SendDlgItemMessage(hDlg, IDC_COMBO_CP, CB_GETITEMDATA, idx, 0);
     } else if (id == ID_POPUP_COPYPATH) {
+    } else if (id == ID_CONFIG_OPTIONS) {
+      if (DialogBox(hInstBuffer, MAKEINTRESOURCE(IDD_CONFIG), hDlg, ConfigDlgProc) == IDOK) {
+        // Options updated
+      }
+      break;
     } else if (id == ID_HELP_ABOUT) {
       MessageBoxW(
           hDlg,
@@ -991,10 +1068,134 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR lpCmdLine,
                    int nShowCmd) {
-  InitCommonControls();
+  INITCOMMONCONTROLSEX icex;
+  icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+  icex.dwICC = ICC_WIN95_CLASSES | ICC_DATE_CLASSES;
+  InitCommonControlsEx(&icex);
+
   CoInitialize(NULL); // Init COM for SHBrowseForFolder
   int ret =
       DialogBox(hInstance, MAKEINTRESOURCE(IDD_MAINDIALOG), NULL, DialogProc);
   CoUninitialize();
-  return ret;
+  return (int)ret;
+}
+
+INT_PTR CALLBACK ConfigDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+  auto UpdateUIState = [hDlg]() {
+    BOOL sizeEnabled = IsDlgButtonChecked(hDlg, IDC_CHKS_SIZE) == BST_CHECKED;
+    EnableWindow(GetDlgItem(hDlg, IDC_EDIT_MINSIZE), sizeEnabled);
+    EnableWindow(GetDlgItem(hDlg, IDC_EDIT_MAXSIZE), sizeEnabled);
+    BOOL dateEnabled = IsDlgButtonChecked(hDlg, IDC_CHKS_DATE) == BST_CHECKED;
+    EnableWindow(GetDlgItem(hDlg, IDC_DATE_MIN), dateEnabled);
+    EnableWindow(GetDlgItem(hDlg, IDC_DATE_MAX), dateEnabled);
+  };
+
+  switch (uMsg) {
+  case WM_INITDIALOG: {
+    // Mode
+    int id = IDC_RADIO_SUBSTRING;
+    if (g_options.mode == MatchMode_Exact) id = IDC_RADIO_EXACT;
+    else if (g_options.mode == MatchMode_SpaceDivided) id = IDC_RADIO_SPACED;
+    else if (g_options.mode == MatchMode_RegEx) id = IDC_RADIO_REGEX;
+    CheckRadioButton(hDlg, IDC_RADIO_SUBSTRING, IDC_RADIO_REGEX, id);
+    CheckDlgButton(hDlg, IDC_CHKS_IGNORECASE, g_options.ignoreCase ? BST_CHECKED : BST_UNCHECKED);
+
+    // Size
+    CheckDlgButton(hDlg, IDC_CHKS_SIZE, (g_options.minSize > 0 || g_options.maxSize > 0) ? BST_CHECKED : BST_UNCHECKED);
+    SetDlgItemInt(hDlg, IDC_EDIT_MINSIZE, (UINT)(g_options.minSize / 1024), FALSE);
+    SetDlgItemInt(hDlg, IDC_EDIT_MAXSIZE, (UINT)(g_options.maxSize / 1024), FALSE);
+
+    // Date
+    CheckDlgButton(hDlg, IDC_CHKS_DATE, (g_options.minDate > 0 || g_options.maxDate > 0) ? BST_CHECKED : BST_UNCHECKED);
+    SYSTEMTIME stMin, stMax;
+    FILETIME ft;
+    if (g_options.minDate > 0) {
+      ULARGE_INTEGER uli; uli.QuadPart = g_options.minDate;
+      ft.dwLowDateTime = uli.LowPart; ft.dwHighDateTime = uli.HighPart;
+      FileTimeToSystemTime(&ft, &stMin);
+    } else GetLocalTime(&stMin);
+    if (g_options.maxDate > 0) {
+      ULARGE_INTEGER uli; uli.QuadPart = g_options.maxDate;
+      ft.dwLowDateTime = uli.LowPart; ft.dwHighDateTime = uli.HighPart;
+      FileTimeToSystemTime(&ft, &stMax);
+    } else GetLocalTime(&stMax);
+    DateTime_SetSystemtime(GetDlgItem(hDlg, IDC_DATE_MIN), GDT_VALID, &stMin);
+    DateTime_SetSystemtime(GetDlgItem(hDlg, IDC_DATE_MAX), GDT_VALID, &stMax);
+
+    // Include
+    CheckDlgButton(hDlg, IDC_CHKS_FILES, g_options.includeFiles ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hDlg, IDC_CHKS_FOLDERS, g_options.includeFolders ? BST_CHECKED : BST_UNCHECKED);
+
+    // Extension
+    SetDlgItemTextW(hDlg, IDC_EDIT_EXT, g_options.extensionFilter.c_str());
+
+    // Advanced
+    CheckDlgButton(hDlg, IDC_CHKS_FULLPATH, g_options.matchFullPath ? BST_CHECKED : BST_UNCHECKED);
+    SetDlgItemTextW(hDlg, IDC_EDIT_EXCLUDE, g_options.excludePattern.c_str());
+
+    UpdateUIState();
+    return TRUE;
+  }
+  case WM_COMMAND: {
+    int id = LOWORD(wParam);
+    if (id == IDOK) {
+      // Mode
+      if (IsDlgButtonChecked(hDlg, IDC_RADIO_SUBSTRING)) g_options.mode = MatchMode_Substring;
+      else if (IsDlgButtonChecked(hDlg, IDC_RADIO_EXACT)) g_options.mode = MatchMode_Exact;
+      else if (IsDlgButtonChecked(hDlg, IDC_RADIO_SPACED)) g_options.mode = MatchMode_SpaceDivided;
+      else if (IsDlgButtonChecked(hDlg, IDC_RADIO_REGEX)) g_options.mode = MatchMode_RegEx;
+      g_options.ignoreCase = (IsDlgButtonChecked(hDlg, IDC_CHKS_IGNORECASE) == BST_CHECKED);
+
+      // Size
+      if (IsDlgButtonChecked(hDlg, IDC_CHKS_SIZE) == BST_CHECKED) {
+        g_options.minSize = (uint64_t)GetDlgItemInt(hDlg, IDC_EDIT_MINSIZE, NULL, FALSE) * 1024;
+        g_options.maxSize = (uint64_t)GetDlgItemInt(hDlg, IDC_EDIT_MAXSIZE, NULL, FALSE) * 1024;
+      } else {
+        g_options.minSize = 0; g_options.maxSize = 0;
+      }
+
+      // Date
+      if (IsDlgButtonChecked(hDlg, IDC_CHKS_DATE) == BST_CHECKED) {
+        SYSTEMTIME st; FILETIME ft; ULARGE_INTEGER uli;
+        DateTime_GetSystemtime(GetDlgItem(hDlg, IDC_DATE_MIN), &st);
+        SystemTimeToFileTime(&st, &ft);
+        uli.LowPart = ft.dwLowDateTime; uli.HighPart = ft.dwHighDateTime;
+        g_options.minDate = uli.QuadPart;
+        
+        DateTime_GetSystemtime(GetDlgItem(hDlg, IDC_DATE_MAX), &st);
+        st.wHour = 23; st.wMinute = 59; st.wSecond = 59; // End of day
+        SystemTimeToFileTime(&st, &ft);
+        uli.LowPart = ft.dwLowDateTime; uli.HighPart = ft.dwHighDateTime;
+        g_options.maxDate = uli.QuadPart;
+      } else {
+        g_options.minDate = 0; g_options.maxDate = 0;
+      }
+
+      // Include
+      g_options.includeFiles = (IsDlgButtonChecked(hDlg, IDC_CHKS_FILES) == BST_CHECKED);
+      g_options.includeFolders = (IsDlgButtonChecked(hDlg, IDC_CHKS_FOLDERS) == BST_CHECKED);
+
+      // Extension
+      wchar_t extBuf[256];
+      GetDlgItemTextW(hDlg, IDC_EDIT_EXT, extBuf, 256);
+      g_options.extensionFilter = extBuf;
+
+      // Advanced
+      g_options.matchFullPath = (IsDlgButtonChecked(hDlg, IDC_CHKS_FULLPATH) == BST_CHECKED);
+      wchar_t exBuf[256];
+      GetDlgItemTextW(hDlg, IDC_EDIT_EXCLUDE, exBuf, 256);
+      g_options.excludePattern = exBuf;
+
+      EndDialog(hDlg, IDOK);
+      return TRUE;
+    } else if (id == IDCANCEL) {
+      EndDialog(hDlg, IDCANCEL);
+      return TRUE;
+    } else if (id == IDC_CHKS_SIZE || id == IDC_CHKS_DATE) {
+      UpdateUIState();
+    }
+    break;
+  }
+  }
+  return FALSE;
 }

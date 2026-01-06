@@ -41,10 +41,58 @@ END
 
 IDR_MAINMENU MENU
 BEGIN
+    POPUP "&Config"
+    BEGIN
+        MENUITEM "&Search Options...", ID_CONFIG_OPTIONS
+    END
     POPUP "&Help"
     BEGIN
         MENUITEM "&About...", ID_HELP_ABOUT
     END
+END
+
+IDD_CONFIG DIALOGEX 0, 0, 150, 330
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Search Options"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Match Mode", IDC_STATIC, 7, 7, 136, 65
+    AUTORADIOBUTTON "Substring", IDC_RADIO_SUBSTRING, 15, 18, 120, 10, WS_GROUP | WS_TABSTOP
+    AUTORADIOBUTTON "Exact Match", IDC_RADIO_EXACT, 15, 30, 120, 10
+    AUTORADIOBUTTON "Space Divided (All)", IDC_RADIO_SPACED, 15, 42, 120, 10
+    AUTORADIOBUTTON "Regular Expression", IDC_RADIO_REGEX, 15, 54, 120, 10
+    
+    AUTOCHECKBOX    "Ignore Case (Global)", IDC_CHKS_IGNORECASE, 7, 75, 136, 10, WS_TABSTOP
+    
+    GROUPBOX        "Size Filter", IDC_STATIC, 7, 90, 136, 45
+    AUTOCHECKBOX    "Enable Size Filter", IDC_CHKS_SIZE, 12, 100, 126, 10
+    LTEXT           "Min:", IDC_STATIC, 15, 112, 15, 8
+    EDITTEXT        IDC_EDIT_MINSIZE, 35, 110, 40, 12, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Max:", IDC_STATIC, 80, 112, 15, 8
+    EDITTEXT        IDC_EDIT_MAXSIZE, 100, 110, 40, 12, ES_AUTOHSCROLL | ES_NUMBER
+    
+    GROUPBOX        "Date Filter", IDC_STATIC, 7, 140, 136, 55
+    AUTOCHECKBOX    "Enable Date Filter", IDC_CHKS_DATE, 12, 150, 126, 10
+    LTEXT           "From:", IDC_STATIC, 15, 163, 20, 8
+    CONTROL         "", IDC_DATE_MIN, "SysDateTimePick32", DTS_SHORTDATEFORMAT | WS_TABSTOP, 40, 160, 60, 12
+    LTEXT           "To:", IDC_STATIC, 15, 178, 20, 8
+    CONTROL         "", IDC_DATE_MAX, "SysDateTimePick32", DTS_SHORTDATEFORMAT | WS_TABSTOP, 40, 175, 60, 12
+
+    GROUPBOX        "Include", IDC_STATIC, 7, 200, 136, 25
+    AUTOCHECKBOX    "Files", IDC_CHKS_FILES, 15, 210, 50, 10, WS_TABSTOP
+    AUTOCHECKBOX    "Folders", IDC_CHKS_FOLDERS, 75, 210, 50, 10, WS_TABSTOP
+
+    GROUPBOX        "Type Filter", IDC_STATIC, 7, 230, 136, 25
+    LTEXT           "Ext:", IDC_STATIC, 15, 242, 15, 8
+    EDITTEXT        IDC_EDIT_EXT, 35, 240, 100, 12, ES_AUTOHSCROLL
+
+    GROUPBOX        "Advanced", IDC_STATIC, 7, 260, 136, 45
+    AUTOCHECKBOX    "Match Full Path", IDC_CHKS_FULLPATH, 15, 272, 120, 10, WS_TABSTOP
+    LTEXT           "Exclude:", IDC_STATIC, 15, 287, 30, 8
+    EDITTEXT        IDC_EDIT_EXCLUDE, 50, 285, 85, 12, ES_AUTOHSCROLL
+    
+    DEFPUSHBUTTON   "OK", IDOK, 38, 310, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 93, 310, 50, 14
 END
 
 // Manifest to request admin privileges

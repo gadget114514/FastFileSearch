@@ -15,6 +15,36 @@ struct FileResult {
   bool IsDirectory;
 };
 
+enum MatchMode {
+  MatchMode_Substring = 0,
+  MatchMode_Exact,
+  MatchMode_SpaceDivided,
+  MatchMode_RegEx
+};
+
+struct SearchOptions {
+  MatchMode mode;
+  bool ignoreCase;
+
+  // Metadata Filters (0 = disabled)
+  uint64_t minSize;
+  uint64_t maxSize;
+  uint64_t minDate; // FILETIME as uint64
+  uint64_t maxDate; // FILETIME as uint64
+
+  bool includeFiles;
+  bool includeFolders;
+  std::wstring extensionFilter; // e.g. "exe;dll"
+
+  bool matchFullPath;
+  std::wstring excludePattern; // e.g. "temp;cache"
+
+  SearchOptions()
+      : mode(MatchMode_Substring), ignoreCase(true), minSize(0), maxSize(0),
+        minDate(0), maxDate(0), includeFiles(true), includeFolders(true),
+        extensionFilter(L""), matchFullPath(false), excludePattern(L"") {}
+};
+
 class MFTReader {
 public:
   MFTReader();
@@ -29,7 +59,7 @@ public:
   }
   std::vector<FileResult> Search(const std::wstring &query,
                                  const std::wstring &targetFolder,
-                                 bool caseSensitive = false,
+                                 const SearchOptions &options = SearchOptions(),
                                  int maxResults = -1);
   std::wstring GetLastErrorMessage() const;
 
@@ -62,5 +92,6 @@ private:
   void ProcessBuffer(const uint8_t *buffer, size_t size);
   void ParseRecord(const FILE_RECORD_HEADER *record);
   std::wstring BuildPath(uint64_t refId);
-  bool MatchPattern(const std::wstring &str, const std::wstring &pattern);
+  bool MatchPattern(const std::wstring &str, const std::wstring &pattern,
+                    const SearchOptions &options);
 };
