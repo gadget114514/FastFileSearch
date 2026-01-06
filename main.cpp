@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "FatReader.h"
+#include "Localization.h"
 #include "MFTReader.h"
 #include "exFatReader.h"
 #include "resource.h"
@@ -85,21 +86,7 @@ std::wstring FormatSize(uint64_t size);
 INT_PTR CALLBACK ConfigDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam,
                                LPARAM lParam);
 
-// Strings
-const wchar_t *STR_SEARCH[] = {L"Search", L"検索"};
-const wchar_t *STR_FILENAME[] = {L"Search Filename:", L"検索ファイル名:"};
-const wchar_t *STR_STATUS_READY[] = {L"Ready", L"準備完了"};
-const wchar_t *STR_STATUS_BUSY[] = {L"Searching...", L"検索中..."};
-const wchar_t *STR_STATUS_DONE[] = {L"Found %d items", L"%d 件見つかりました"};
-const wchar_t *STR_COL_NAME[] = {L"Name", L"名前"};
-const wchar_t *STR_COL_PATH[] = {L"Path", L"パス"};
-const wchar_t *STR_COL_DATE[] = {L"Modified Date", L"更新日時"};
-const wchar_t *STR_COL_SIZE[] = {L"Size", L"サイズ"};
-const wchar_t *STR_SAVE[] = {L"Save Results", L"結果を保存"};
-const wchar_t *STR_TARGETS[] = {L"Search Candidates:", L"検索対象:"};
-const wchar_t *STR_ADD[] = {L"Add Folder", L"フォルダ追加"};
-const wchar_t *STR_REMOVE[] = {L"Not candidate", L"検索対象外"};
-const wchar_t *STR_NOT[] = {L"Not", L"否定"};
+// Strings removed - using Localization class
 
 std::wstring FormatDate(uint64_t fileTime) {
   FILETIME ft;
@@ -128,28 +115,55 @@ std::wstring FormatSize(uint64_t size) {
 }
 
 void UpdateLanguage(HWND hDlg) {
-  SetDlgItemTextW(hDlg, IDC_BTN_SEARCH, STR_SEARCH[currentLang]);
-  SetDlgItemTextW(hDlg, IDC_STATIC_FILENAME, STR_FILENAME[currentLang]);
-  SetDlgItemTextW(hDlg, IDC_BTN_SAVE, STR_SAVE[currentLang]);
-  SetDlgItemTextW(hDlg, IDC_STATIC_TARGETS, STR_TARGETS[currentLang]);
-  SetDlgItemTextW(hDlg, IDC_BTN_ADD, STR_ADD[currentLang]);
-  SetDlgItemTextW(hDlg, IDC_BTN_REMOVE, STR_REMOVE[currentLang]);
-  SetDlgItemTextW(hDlg, IDC_CHECK_NOT, STR_NOT[currentLang]);
+  SetDlgItemTextW(hDlg, IDC_BTN_SEARCH, Localization::GetString(IDS_SEARCH));
+  SetDlgItemTextW(hDlg, IDC_STATIC_FILENAME,
+                  Localization::GetString(IDS_FILENAME_LABEL));
+  SetDlgItemTextW(hDlg, IDC_BTN_SAVE, Localization::GetString(IDS_BTN_SAVE));
+  SetDlgItemTextW(hDlg, IDC_STATIC_TARGETS,
+                  Localization::GetString(IDS_LBL_TARGETS));
+  SetDlgItemTextW(hDlg, IDC_BTN_ADD, Localization::GetString(IDS_BTN_ADD));
+  SetDlgItemTextW(hDlg, IDC_BTN_REMOVE,
+                  Localization::GetString(IDS_BTN_REMOVE));
+  SetDlgItemTextW(hDlg, IDC_CHECK_NOT, Localization::GetString(IDS_CHK_NOT));
 
   // Update List Columns
   LVCOLUMNW lvc;
   lvc.mask = LVCF_TEXT;
-  lvc.pszText = (LPWSTR)STR_COL_NAME[currentLang];
+  lvc.pszText = (LPWSTR)Localization::GetString(IDS_COL_NAME);
   SendMessage(hList, LVM_SETCOLUMNW, 0, (LPARAM)&lvc);
-  lvc.pszText = (LPWSTR)STR_COL_PATH[currentLang];
+  lvc.pszText = (LPWSTR)Localization::GetString(IDS_COL_PATH);
   SendMessage(hList, LVM_SETCOLUMNW, 1, (LPARAM)&lvc);
-  lvc.pszText = (LPWSTR)STR_COL_DATE[currentLang];
+  lvc.pszText = (LPWSTR)Localization::GetString(IDS_COL_DATE);
   SendMessage(hList, LVM_SETCOLUMNW, 2, (LPARAM)&lvc);
-  lvc.pszText = (LPWSTR)STR_COL_SIZE[currentLang];
+  lvc.pszText = (LPWSTR)Localization::GetString(IDS_COL_SIZE);
   SendMessage(hList, LVM_SETCOLUMNW, 3, (LPARAM)&lvc);
 
   SetDlgItemTextW(hDlg, IDC_STATIC_CP,
-                  currentLang == 0 ? L"Code Page:" : L"コードページ:");
+                  Localization::GetString(IDS_LBL_CODEPAGE));
+
+  // Update Menu
+  HMENU hMenu = GetMenu(hDlg);
+  if (hMenu) {
+    // Top Level
+    ModifyMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING | MF_POPUP,
+                (UINT_PTR)GetSubMenu(hMenu, 0),
+                Localization::GetString(IDS_MENU_CONFIG));
+    ModifyMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING | MF_POPUP,
+                (UINT_PTR)GetSubMenu(hMenu, 1),
+                Localization::GetString(IDS_MENU_LANGUAGE));
+    ModifyMenuW(hMenu, 2, MF_BYPOSITION | MF_STRING | MF_POPUP,
+                (UINT_PTR)GetSubMenu(hMenu, 2),
+                Localization::GetString(IDS_MENU_HELP));
+
+    // Items
+    ModifyMenuW(hMenu, ID_CONFIG_OPTIONS, MF_BYCOMMAND | MF_STRING,
+                ID_CONFIG_OPTIONS,
+                Localization::GetString(IDS_MENU_SEARCH_OPTIONS));
+    ModifyMenuW(hMenu, ID_HELP_ABOUT, MF_BYCOMMAND | MF_STRING, ID_HELP_ABOUT,
+                Localization::GetString(IDS_MENU_ABOUT));
+
+    DrawMenuBar(hDlg);
+  }
 }
 
 void ScanThread(void *param) {
@@ -468,8 +482,9 @@ void LoadConfig(HWND hDlg) {
   // Load Language
   currentLang =
       GetPrivateProfileIntW(L"Settings", L"Language", 0, iniPath.c_str());
-  if (currentLang < 0 || currentLang > 1)
+  if (currentLang < 0 || currentLang >= APP_LANG_COUNT)
     currentLang = 0;
+  Localization::SetLanguage((LanguageID)currentLang);
 
   // Load Code Page
   currentCodePage = GetPrivateProfileIntW(L"Settings", L"CodePage", CP_OEMCP,
@@ -900,12 +915,12 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
     lvc.cx = 100;
     ListView_InsertColumn(hList, 3, &lvc);
 
-    // Setup Languages
-    SendDlgItemMessage(hDlg, IDC_COMBO_LANG, CB_ADDSTRING, 0,
-                       (LPARAM)L"English");
-    SendDlgItemMessage(hDlg, IDC_COMBO_LANG, CB_ADDSTRING, 0,
-                       (LPARAM)L"Japanese");
-    SendDlgItemMessage(hDlg, IDC_COMBO_LANG, CB_SETCURSEL, 0, 0);
+    // Setup Languages removed - now in Menu
+
+    // Check Current Language Menu Item
+    HMENU hMenu = GetMenu(hDlg);
+    CheckMenuItem(hMenu, ID_LANG_ENGLISH + currentLang,
+                  MF_BYCOMMAND | MF_CHECKED);
 
     // Setup Code Pages
     HWND hCP = GetDlgItem(hDlg, IDC_COMBO_CP);
@@ -934,6 +949,17 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
     // Initial Default: Add C:\ drive?
     // Load Config
     LoadConfig(hDlg);
+
+    // Apply Language (including Menu)
+    UpdateLanguage(hDlg);
+
+    // Check Configured Language Menu Item
+    hMenu = GetMenu(hDlg);
+    for (int i = 0; i < APP_LANG_COUNT; i++) {
+      CheckMenuItem(hMenu, ID_LANG_ENGLISH + i,
+                    MF_BYCOMMAND |
+                        (i == currentLang ? MF_CHECKED : MF_UNCHECKED));
+    }
 
     if (searchTargets.empty()) {
       wchar_t defaultPath[] = L"C:\\";
@@ -1005,7 +1031,8 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
             (IsDlgButtonChecked(hDlg, IDC_CHECK_NOT) == BST_CHECKED);
 
         isSearching = true;
-        SetDlgItemTextW(hDlg, IDC_STATUS, STR_STATUS_BUSY[currentLang]);
+        SetDlgItemTextW(hDlg, IDC_STATUS,
+                        Localization::GetString(IDS_STATUS_BUSY));
         ListView_DeleteAllItems(hList);
         _beginthread(ScanThread, 0, (void *)hDlg);
       }
@@ -1015,15 +1042,24 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
       AddFolder(hDlg);
     } else if (id == IDC_BTN_REMOVE) {
       RemoveFolder(hDlg);
-    } else if (id == IDC_COMBO_LANG && HIWORD(wParam) == CBN_SELCHANGE) {
-      currentLang =
-          SendDlgItemMessage(hDlg, IDC_COMBO_LANG, CB_GETCURSEL, 0, 0);
-      UpdateLanguage(hDlg);
     } else if (id == IDC_COMBO_CP && HIWORD(wParam) == CBN_SELCHANGE) {
       int idx = (int)SendDlgItemMessage(hDlg, IDC_COMBO_CP, CB_GETCURSEL, 0, 0);
       currentCodePage =
           (int)SendDlgItemMessage(hDlg, IDC_COMBO_CP, CB_GETITEMDATA, idx, 0);
     } else if (id == ID_POPUP_COPYPATH) {
+    } else if (id >= ID_LANG_ENGLISH && id <= ID_LANG_PORTUGUESE) {
+      int newLang = id - ID_LANG_ENGLISH;
+      Localization::SetLanguage((LanguageID)newLang);
+      currentLang = newLang;
+      UpdateLanguage(hDlg);
+
+      // Update Menu Checks
+      HMENU hMenu = GetMenu(hDlg);
+      for (int i = 0; i < APP_LANG_COUNT; i++) {
+        CheckMenuItem(hMenu, ID_LANG_ENGLISH + i,
+                      MF_BYCOMMAND |
+                          (i == currentLang ? MF_CHECKED : MF_UNCHECKED));
+      }
     } else if (id == ID_CONFIG_OPTIONS) {
       if (DialogBox(hInstBuffer, MAKEINTRESOURCE(IDD_CONFIG), hDlg,
                     ConfigDlgProc) == IDOK) {
@@ -1115,7 +1151,8 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
     PopulateList();
     {
       wchar_t buf[100];
-      wsprintfW(buf, STR_STATUS_DONE[currentLang], searchResults.size());
+      wsprintfW(buf, Localization::GetString(IDS_STATUS_FOUND_FMT),
+                searchResults.size());
       SetDlgItemTextW(hDlg, IDC_STATUS, buf);
     }
     break;
@@ -1164,6 +1201,53 @@ INT_PTR CALLBACK ConfigDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam,
 
   switch (uMsg) {
   case WM_INITDIALOG: {
+    // Localize Dialog
+    SetWindowTextW(hDlg, Localization::GetString(IDS_CONFIG_TITLE));
+    SetDlgItemTextW(hDlg, IDC_GRP_MATCHMODE,
+                    Localization::GetString(IDS_GRP_MATCHMODE));
+
+    SetDlgItemTextW(hDlg, IDC_RADIO_SUBSTRING,
+                    Localization::GetString(IDS_RAD_SUBSTRING));
+    SetDlgItemTextW(hDlg, IDC_RADIO_EXACT,
+                    Localization::GetString(IDS_RAD_EXACT));
+    SetDlgItemTextW(hDlg, IDC_RADIO_SPACED,
+                    Localization::GetString(IDS_RAD_SPACED));
+    SetDlgItemTextW(hDlg, IDC_RADIO_REGEX,
+                    Localization::GetString(IDS_RAD_REGEX));
+    SetDlgItemTextW(hDlg, IDC_CHKS_IGNORECASE,
+                    Localization::GetString(IDS_CHK_IGNORECASE));
+
+    SetDlgItemTextW(hDlg, IDC_GRP_SIZE, Localization::GetString(IDS_GRP_SIZE));
+    SetDlgItemTextW(hDlg, IDC_CHKS_SIZE, Localization::GetString(IDS_CHK_SIZE));
+    SetDlgItemTextW(hDlg, IDC_STATIC_MIN, Localization::GetString(IDS_LBL_MIN));
+    SetDlgItemTextW(hDlg, IDC_STATIC_MAX, Localization::GetString(IDS_LBL_MAX));
+
+    SetDlgItemTextW(hDlg, IDC_GRP_DATE, Localization::GetString(IDS_GRP_DATE));
+    SetDlgItemTextW(hDlg, IDC_CHKS_DATE, Localization::GetString(IDS_CHK_DATE));
+    SetDlgItemTextW(hDlg, IDC_STATIC_FROM,
+                    Localization::GetString(IDS_LBL_FROM));
+    SetDlgItemTextW(hDlg, IDC_STATIC_TO, Localization::GetString(IDS_LBL_TO));
+
+    SetDlgItemTextW(hDlg, IDC_GRP_INCLUDE,
+                    Localization::GetString(IDS_GRP_INCLUDE));
+    SetDlgItemTextW(hDlg, IDC_CHKS_FILES,
+                    Localization::GetString(IDS_CHK_FILES));
+    SetDlgItemTextW(hDlg, IDC_CHKS_FOLDERS,
+                    Localization::GetString(IDS_CHK_FOLDERS));
+
+    SetDlgItemTextW(hDlg, IDC_GRP_TYPE, Localization::GetString(IDS_GRP_TYPE));
+    SetDlgItemTextW(hDlg, IDC_STATIC_EXT, Localization::GetString(IDS_LBL_EXT));
+
+    SetDlgItemTextW(hDlg, IDC_GRP_ADVANCED,
+                    Localization::GetString(IDS_GRP_ADVANCED));
+    SetDlgItemTextW(hDlg, IDC_CHKS_FULLPATH,
+                    Localization::GetString(IDS_CHK_FULLPATH));
+    SetDlgItemTextW(hDlg, IDC_STATIC_EXCLUDE,
+                    Localization::GetString(IDS_LBL_EXCLUDE));
+
+    SetDlgItemTextW(hDlg, IDOK, Localization::GetString(IDS_BTN_OK));
+    SetDlgItemTextW(hDlg, IDCANCEL, Localization::GetString(IDS_BTN_CANCEL));
+
     // Mode
     int id = IDC_RADIO_SUBSTRING;
     if (g_options.mode == MatchMode_Exact)

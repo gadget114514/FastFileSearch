@@ -4,6 +4,9 @@
     <ClCompile Include="D:\ws\FastFileSearch\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\ws\FastFileSearch\Localization.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -15,6 +18,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="D:\ws\FastFileSearch\Localization.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>

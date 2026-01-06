@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(FastFileSearch WIN32
     main.cpp
+    Localization.cpp
+    Localization.h
     MFTReader.cpp
     MFTReader.h
     NtfsStructs.h
