@@ -467,54 +467,60 @@ bool MFTReader::MatchPattern(const std::wstring &str,
   if (pattern.empty())
     return true;
 
+  bool matched = false;
+
   if (options.mode == MatchMode_Exact) {
     if (options.ignoreCase) {
-      return lstrcmpiW(str.c_str(), pattern.c_str()) == 0;
+      matched = lstrcmpiW(str.c_str(), pattern.c_str()) == 0;
     } else {
-      return wcscmp(str.c_str(), pattern.c_str()) == 0;
+      matched = wcscmp(str.c_str(), pattern.c_str()) == 0;
     }
-  }
-
-  if (options.mode == MatchMode_RegEx) {
+  } else if (options.mode == MatchMode_RegEx) {
     try {
       std::regex_constants::syntax_option_type flags = std::regex::ECMAScript;
       if (options.ignoreCase)
         flags |= std::regex::icase;
       std::wregex re(pattern, flags);
-      return std::regex_search(str, re);
+      matched = std::regex_search(str, re);
     } catch (...) {
-      return false;
+      matched = false;
     }
-  }
-
-  if (options.mode == MatchMode_SpaceDivided) {
+  } else if (options.mode == MatchMode_SpaceDivided) {
     std::wstringstream ss(pattern);
     std::wstring token;
+    bool allTokensFound = true;
     while (ss >> token) {
       bool tokenFound = false;
       if (options.ignoreCase) {
-        auto it = std::search(
-            str.begin(), str.end(), token.begin(), token.end(),
-            [](wchar_t c1, wchar_t c2) { return towlower(c1) == towlower(c2); });
+        auto it = std::search(str.begin(), str.end(), token.begin(),
+                              token.end(), [](wchar_t c1, wchar_t c2) {
+                                return towlower(c1) == towlower(c2);
+                              });
         tokenFound = (it != str.end());
       } else {
         tokenFound = (str.find(token) != std::wstring::npos);
       }
-      if (!tokenFound)
-        return false;
+      if (!tokenFound) {
+        allTokensFound = false;
+        break;
+      }
     }
-    return true;
+    matched = allTokensFound;
+  } else {
+    // Default: Substring
+    if (options.ignoreCase) {
+      auto it = std::search(
+          str.begin(), str.end(), pattern.begin(), pattern.end(),
+          [](wchar_t c1, wchar_t c2) { return towlower(c1) == towlower(c2); });
+      matched = it != str.end();
+    } else {
+      matched = str.find(pattern) != std::wstring::npos;
+    }
   }
 
-  // Default: Substring
-  if (options.ignoreCase) {
-    auto it = std::search(
-        str.begin(), str.end(), pattern.begin(), pattern.end(),
-        [](wchar_t c1, wchar_t c2) { return towlower(c1) == towlower(c2); });
-    return it != str.end();
-  } else {
-    return str.find(pattern) != std::wstring::npos;
-  }
+  if (options.invertMatch)
+    return !matched;
+  return matched;
 }
 
 std::vector<FileResult> MFTReader::Search(const std::wstring &query,
@@ -559,26 +565,33 @@ std::vector<FileResult> MFTReader::Search(const std::wstring &query,
       std::wstringstream ss(options.excludePattern);
       std::wstring pattern;
       while (std::getline(ss, pattern, L';')) {
-        if (pattern.empty()) continue;
+        if (pattern.empty())
+          continue;
         if (options.ignoreCase) {
           std::wstring targetLower = targetForExclude;
           std::wstring patternLower = pattern;
-          for (auto &c : targetLower) c = towlower(c);
-          for (auto &c : patternLower) c = towlower(c);
+          for (auto &c : targetLower)
+            c = towlower(c);
+          for (auto &c : patternLower)
+            c = towlower(c);
           if (targetLower.find(patternLower) != std::wstring::npos) {
-            excluded = true; break;
+            excluded = true;
+            break;
           }
         } else {
           if (targetForExclude.find(pattern) != std::wstring::npos) {
-            excluded = true; break;
+            excluded = true;
+            break;
           }
         }
       }
-      if (excluded) continue;
+      if (excluded)
+        continue;
     }
 
     // Match Query (Name or Full Path)
-    if (!MatchPattern(options.matchFullPath ? fullPath : entry.Name, query, options))
+    if (!MatchPattern(options.matchFullPath ? fullPath : entry.Name, query,
+                      options))
       continue;
 
     // Metadata Filters
@@ -593,28 +606,36 @@ std::vector<FileResult> MFTReader::Search(const std::wstring &query,
 
     // Type Filter
     if (entry.IsDirectory) {
-      if (!options.includeFolders) continue;
+      if (!options.includeFolders)
+        continue;
     } else {
-      if (!options.includeFiles) continue;
-      
+      if (!options.includeFiles)
+        continue;
+
       // Extension Filter
       if (!options.extensionFilter.empty()) {
         bool extMatch = false;
         size_t dotPos = entry.Name.find_last_of(L'.');
-        std::wstring fileExt = (dotPos != std::wstring::npos) ? entry.Name.substr(dotPos + 1) : L"";
-        for (auto &c : fileExt) c = towlower(c);
+        std::wstring fileExt = (dotPos != std::wstring::npos)
+                                   ? entry.Name.substr(dotPos + 1)
+                                   : L"";
+        for (auto &c : fileExt)
+          c = towlower(c);
 
         std::wstringstream ss(options.extensionFilter);
         std::wstring extToken;
         while (std::getline(ss, extToken, L';')) {
-          if (extToken.empty()) continue;
-          for (auto &c : extToken) c = towlower(c);
+          if (extToken.empty())
+            continue;
+          for (auto &c : extToken)
+            c = towlower(c);
           if (fileExt == extToken) {
             extMatch = true;
             break;
           }
         }
-        if (!extMatch) continue;
+        if (!extMatch)
+          continue;
       }
     }
 

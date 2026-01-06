@@ -11,6 +11,7 @@ FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     EDITTEXT        IDC_EDIT_QUERY, 175, 7, 205, 14, ES_AUTOHSCROLL | WS_TABSTOP
     LTEXT           "Search Filename:", IDC_STATIC_FILENAME, 115, 9, 60, 8
+    AUTOCHECKBOX    "Not", IDC_CHECK_NOT, 345, 9, 35, 10, WS_TABSTOP
     PUSHBUTTON      "Search", IDC_BTN_SEARCH, 385, 7, 50, 14
     
     LTEXT           "Language:", IDC_STATIC, 7, 9, 35, 8

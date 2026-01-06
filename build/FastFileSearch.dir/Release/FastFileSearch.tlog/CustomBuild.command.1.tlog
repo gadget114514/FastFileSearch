@@ -1,6 +1,6 @@
-^C:\WS\FASTFILESEARCH\CMAKELISTS.TXT
+^D:\WS\FASTFILESEARCH\CMAKELISTS.TXT
 setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -SC:/ws/FastFileSearch -BC:/ws/FastFileSearch/build --check-stamp-file C:/ws/FastFileSearch/build/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SD:/ws/FastFileSearch -BD:/ws/FastFileSearch/build --check-stamp-file D:/ws/FastFileSearch/build/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone

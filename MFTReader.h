@@ -38,11 +38,13 @@ struct SearchOptions {
 
   bool matchFullPath;
   std::wstring excludePattern; // e.g. "temp;cache"
+  bool invertMatch;
 
   SearchOptions()
       : mode(MatchMode_Substring), ignoreCase(true), minSize(0), maxSize(0),
         minDate(0), maxDate(0), includeFiles(true), includeFolders(true),
-        extensionFilter(L""), matchFullPath(false), excludePattern(L"") {}
+        extensionFilter(L""), matchFullPath(false), excludePattern(L""),
+        invertMatch(false) {}
 };
 
 class MFTReader {
