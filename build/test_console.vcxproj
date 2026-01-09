@@ -328,16 +328,16 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="D:\ws\FastFileSearch\test_console.cpp" />
-    <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\NtfsStructs.h" />
-    <ClCompile Include="D:\ws\FastFileSearch\FatReader.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\FatReader.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\FatStructs.h" />
-    <ClCompile Include="D:\ws\FastFileSearch\exFatReader.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\exFatReader.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\exFatStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\test_console.cpp" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\MFTReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\MFTReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\NtfsStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\FatReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\exFatReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatStructs.h" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

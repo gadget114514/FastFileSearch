@@ -130,7 +130,7 @@
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>D:\ws\FastFileSearch\app.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>D:\ws\FastFileSearch\src\app.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -180,7 +180,7 @@
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>D:\ws\FastFileSearch\app.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>D:\ws\FastFileSearch\src\app.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
@@ -230,7 +230,7 @@
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>D:\ws\FastFileSearch\app.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>D:\ws\FastFileSearch\src\app.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
@@ -279,7 +279,7 @@
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>D:\ws\FastFileSearch\app.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>D:\ws\FastFileSearch\src\app.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -340,20 +340,20 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="D:\ws\FastFileSearch\main.cpp" />
-    <ClCompile Include="D:\ws\FastFileSearch\Localization.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\Localization.h" />
-    <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\NtfsStructs.h" />
-    <ClCompile Include="D:\ws\FastFileSearch\FatReader.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\FatReader.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\FatStructs.h" />
-    <ClCompile Include="D:\ws\FastFileSearch\exFatReader.cpp" />
-    <ClInclude Include="D:\ws\FastFileSearch\exFatReader.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\exFatStructs.h" />
-    <ClInclude Include="D:\ws\FastFileSearch\resource.h" />
-    <ResourceCompile Include="D:\ws\FastFileSearch\FastFileSearch.rc" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\main.cpp" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\Localization.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\Localization.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\MFTReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\MFTReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\NtfsStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\FatReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatStructs.h" />
+    <ClCompile Include="D:\ws\FastFileSearch\src\exFatReader.cpp" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatReader.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatStructs.h" />
+    <ClInclude Include="D:\ws\FastFileSearch\src\resource.h" />
+    <ResourceCompile Include="D:\ws\FastFileSearch\src\FastFileSearch.rc" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

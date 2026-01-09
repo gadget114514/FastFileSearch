@@ -1,45 +1,45 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="D:\ws\FastFileSearch\main.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\Localization.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\Localization.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\MFTReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\FatReader.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\FatReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\exFatReader.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\exFatReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="D:\ws\FastFileSearch\Localization.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\Localization.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\MFTReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\NtfsStructs.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\NtfsStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\FatReader.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\FatStructs.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\exFatReader.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\exFatStructs.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\resource.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -47,7 +47,7 @@
     <CustomBuild Include="D:\ws\FastFileSearch\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="D:\ws\FastFileSearch\FastFileSearch.rc">
+    <ResourceCompile Include="D:\ws\FastFileSearch\src\FastFileSearch.rc">
       <Filter>Source Files</Filter>
     </ResourceCompile>
   </ItemGroup>

@@ -1,36 +1,36 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="D:\ws\FastFileSearch\test_console.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\test_console.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\MFTReader.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\MFTReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\FatReader.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\FatReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\ws\FastFileSearch\exFatReader.cpp">
+    <ClCompile Include="D:\ws\FastFileSearch\src\exFatReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="D:\ws\FastFileSearch\MFTReader.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\MFTReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\NtfsStructs.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\NtfsStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\FatReader.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\FatStructs.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\FatStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\exFatReader.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="D:\ws\FastFileSearch\exFatStructs.h">
+    <ClInclude Include="D:\ws\FastFileSearch\src\exFatStructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
