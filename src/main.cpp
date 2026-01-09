@@ -114,6 +114,33 @@ std::wstring FormatSize(uint64_t size) {
   return std::to_wstring(size / (1024 * 1024 * 1024)) + L" GB";
 }
 
+
+void AdjustButtonToText(HWND hBtn) {
+  if (!hBtn)
+    return;
+  wchar_t buf[256];
+  GetWindowTextW(hBtn, buf, 256);
+  HDC hdc = GetDC(hBtn);
+  HFONT hFont = (HFONT)SendMessage(hBtn, WM_GETFONT, 0, 0);
+  HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+
+  SIZE sz;
+  GetTextExtentPoint32W(hdc, buf, (int)wcslen(buf), &sz);
+
+  SelectObject(hdc, hOldFont);
+  ReleaseDC(hBtn, hdc);
+
+  // Padding: 25px (covers button padding or checkbox icon)
+  int width = sz.cx + 25;
+  if (width < 60)
+    width = 60; // Minimum width
+
+  RECT rc;
+  GetWindowRect(hBtn, &rc);
+  SetWindowPos(hBtn, NULL, 0, 0, width, rc.bottom - rc.top,
+               SWP_NOMOVE | SWP_NOZORDER);
+}
+
 void UpdateLanguage(HWND hDlg) {
   SetDlgItemTextW(hDlg, IDC_BTN_SEARCH, Localization::GetString(IDS_SEARCH));
   SetDlgItemTextW(hDlg, IDC_STATIC_FILENAME,
@@ -164,6 +191,91 @@ void UpdateLanguage(HWND hDlg) {
 
     DrawMenuBar(hDlg);
   }
+
+  // Adjust sizes based on new text
+  AdjustButtonToText(GetDlgItem(hDlg, IDC_BTN_SEARCH));
+  AdjustButtonToText(GetDlgItem(hDlg, IDC_BTN_SAVE));
+  AdjustButtonToText(GetDlgItem(hDlg, IDC_BTN_ADD));
+  AdjustButtonToText(GetDlgItem(hDlg, IDC_BTN_REMOVE));
+  AdjustButtonToText(GetDlgItem(hDlg, IDC_CHECK_NOT));
+
+  // Determine Min Width
+  int m = 10;
+  
+  // 1. Top Row: Label + Edit(150) + Not + Search
+  RECT rcS, rcNot, rcLbl;
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_SEARCH), &rcS);
+  GetWindowRect(GetDlgItem(hDlg, IDC_CHECK_NOT), &rcNot);
+  
+  // Measure Label explicitly (as AdjustButtonToText doesn't run on Label)
+  {
+      wchar_t buf[256];
+      GetDlgItemTextW(hDlg, IDC_STATIC_FILENAME, buf, 256);
+      HDC hdc = GetDC(GetDlgItem(hDlg, IDC_STATIC_FILENAME));
+      HFONT hFont = (HFONT)SendDlgItemMessage(hDlg, IDC_STATIC_FILENAME, WM_GETFONT, 0, 0);
+      HFONT hOld = (HFONT)SelectObject(hdc, hFont);
+      SIZE sz;
+      GetTextExtentPoint32W(hdc, buf, (int)wcslen(buf), &sz);
+      SelectObject(hdc, hOld);
+      ReleaseDC(GetDlgItem(hDlg, IDC_STATIC_FILENAME), hdc);
+      // Resize Label Control
+      SetWindowPos(GetDlgItem(hDlg, IDC_STATIC_FILENAME), NULL, 0, 0, sz.cx + 5, sz.cy, SWP_NOMOVE|SWP_NOZORDER);
+      GetWindowRect(GetDlgItem(hDlg, IDC_STATIC_FILENAME), &rcLbl);
+  }
+
+  int lblW = rcLbl.right - rcLbl.left;
+  int notW = rcNot.right - rcNot.left;
+  int searchW = rcS.right - rcS.left;
+  
+  int minW_Top = m + lblW + m + 150 + m + notW + m + searchW + m;
+
+  // 2. Middle: List(100) + Btns (Add/Rem)
+  RECT rcAdd, rcRem, rcTLabel;
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_ADD), &rcAdd);
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_REMOVE), &rcRem);
+  
+  // Measure "Search Candidates" Label
+  {
+      wchar_t buf[256];
+      GetDlgItemTextW(hDlg, IDC_STATIC_TARGETS, buf, 256);
+      HDC hdc = GetDC(GetDlgItem(hDlg, IDC_STATIC_TARGETS));
+      HFONT hFont = (HFONT)SendDlgItemMessage(hDlg, IDC_STATIC_TARGETS, WM_GETFONT, 0, 0);
+      HFONT hOld = (HFONT)SelectObject(hdc, hFont);
+      SIZE sz;
+      GetTextExtentPoint32W(hdc, buf, (int)wcslen(buf), &sz);
+      SelectObject(hdc, hOld);
+      ReleaseDC(GetDlgItem(hDlg, IDC_STATIC_TARGETS), hdc);
+      SetWindowPos(GetDlgItem(hDlg, IDC_STATIC_TARGETS), NULL, 0, 0, sz.cx + 5, sz.cy, SWP_NOMOVE|SWP_NOZORDER);
+      GetWindowRect(GetDlgItem(hDlg, IDC_STATIC_TARGETS), &rcTLabel);
+  }
+
+  int addW = rcAdd.right - rcAdd.left;
+  int remW = rcRem.right - rcRem.left;
+  int tLblW = rcTLabel.right - rcTLabel.left;
+
+  int maxBtnW = (addW > remW) ? addW : remW;
+  int minW_Mid = m + 100 + m + maxBtnW + m;
+  int minW_Lbl = m + tLblW + m; 
+
+  int reqWidth = minW_Top;
+  if (minW_Mid > reqWidth) reqWidth = minW_Mid;
+  if (minW_Lbl > reqWidth) reqWidth = minW_Lbl;
+
+  // Current Client Width
+  RECT rcClient;
+  GetClientRect(hDlg, &rcClient);
+  
+  if (rcClient.right < reqWidth) {
+      // Resize Window
+      RECT rcWin;
+      GetWindowRect(hDlg, &rcWin);
+      int diff = reqWidth - rcClient.right;
+      SetWindowPos(hDlg, NULL, 0, 0, (rcWin.right - rcWin.left) + diff, rcWin.bottom - rcWin.top, SWP_NOMOVE | SWP_NOZORDER);
+      GetClientRect(hDlg, &rcClient); // Update
+  }
+
+  // Refresh Layout
+  ResizeLayout(hDlg, rcClient.right, rcClient.bottom);
 }
 
 void ScanThread(void *param) {
@@ -604,21 +716,28 @@ void ResizeLayout(HWND hDlg, int cx, int cy) {
   // Margins (in pixels approx)
   int m = 10;
 
-  // Get Button Size (Search)
-  RECT rcBtn;
-  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_SEARCH), &rcBtn);
-  int btnW = rcBtn.right - rcBtn.left;
-  int btnH = rcBtn.bottom - rcBtn.top;
+  // Get Button Sizes
+  RECT rcBtnS, rcBtnAdd, rcBtnRem;
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_SEARCH), &rcBtnS);
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_ADD), &rcBtnAdd);
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_REMOVE), &rcBtnRem);
+
+  int btnW = rcBtnS.right - rcBtnS.left;
+  int addW = rcBtnAdd.right - rcBtnAdd.left;
+  int remW = rcBtnRem.right - rcBtnRem.left;
+
+  int maxRightColW = btnW;
+  if(addW > maxRightColW) maxRightColW = addW;
+  if(remW > maxRightColW) maxRightColW = remW;
+
+  // Right Edge for buttons
+  int rightEdge = cx - m;
 
   // Top Row
-  // Edit Query: x=m+220? No.
-  // Filename Label: x=10.
-  // Let's rely on original positions for "Left".
-  // Buttons align to Right = cx - m - btnW.
-  int btnX = cx - m - btnW;
+  // Buttons align to Right
+  int btnX = rightEdge - btnW;
 
   // Search Button
-  // We need current Y.
   RECT rcS;
   GetWindowRect(GetDlgItem(hDlg, IDC_BTN_SEARCH), &rcS);
   POINT ptS = {rcS.left, rcS.top};
@@ -629,42 +748,48 @@ void ResizeLayout(HWND hDlg, int cx, int cy) {
   RECT rcNot;
   GetWindowRect(GetDlgItem(hDlg, IDC_CHECK_NOT), &rcNot);
   int notW = rcNot.right - rcNot.left;
-  int notH = rcNot.bottom - rcNot.top;
-  // Align vertically with Search button or Edit? Search button is usually
-  // centered or top aligned. Both are y=7 (rcS.top). Let's place it to the left
-  // of Search Button with 'm' spacing.
   int notX = btnX - m - notW;
-  Move(IDC_CHECK_NOT, notX, ptS.y + 2, 0, 0, false); // +2 for alignment roughly
+  Move(IDC_CHECK_NOT, notX, ptS.y + 2, 0, 0, false);
+
+  // Filename Label
+  RECT rcLbl;
+  GetWindowRect(GetDlgItem(hDlg, IDC_STATIC_FILENAME), &rcLbl);
+  int lblW = rcLbl.right - rcLbl.left;
+  Move(IDC_STATIC_FILENAME, m, ptS.y + 2, lblW, rcLbl.bottom - rcLbl.top, true);
 
   // Edit Query
+  // Starts after Label + m, ends before Not - m
+  int editX = m + lblW + m;
+  int editW = notX - m - editX;
+  if (editW < 50) editW = 50; // Safety
+  
   RECT rcE;
   GetWindowRect(GetDlgItem(hDlg, IDC_EDIT_QUERY), &rcE);
-  POINT ptE = {rcE.left, rcE.top};
-  ScreenToClient(hDlg, &ptE);
-  // Width = notX - m - ptE.x
-  Move(IDC_EDIT_QUERY, ptE.x, ptE.y, notX - m - ptE.x, rcE.bottom - rcE.top,
-       true);
+  Move(IDC_EDIT_QUERY, editX, ptS.y, editW, rcE.bottom - rcE.top, true);
 
   // Target List Buttons
-  RECT rcAdd;
-  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_ADD), &rcAdd);
-  POINT ptAdd = {rcAdd.left, rcAdd.top};
+  // Align right edge to rightEdge
+  RECT rcAddT;
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_ADD), &rcAddT);
+  POINT ptAdd = {rcAddT.left, rcAddT.top};
   ScreenToClient(hDlg, &ptAdd);
-  Move(IDC_BTN_ADD, btnX, ptAdd.y, 0, 0, false);
+  // x = rightEdge - addW
+  Move(IDC_BTN_ADD, rightEdge - addW, ptAdd.y, 0, 0, false);
 
-  RECT rcRem;
-  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_REMOVE), &rcRem);
-  POINT ptRem = {rcRem.left, rcRem.top};
+  RECT rcRemT;
+  GetWindowRect(GetDlgItem(hDlg, IDC_BTN_REMOVE), &rcRemT);
+  POINT ptRem = {rcRemT.left, rcRemT.top};
   ScreenToClient(hDlg, &ptRem);
-  Move(IDC_BTN_REMOVE, btnX, ptRem.y, 0, 0, false);
+  // x = rightEdge - remW
+  Move(IDC_BTN_REMOVE, rightEdge - remW, ptRem.y, 0, 0, false);
 
   // Target List
   RECT rcT;
   GetWindowRect(GetDlgItem(hDlg, IDC_LIST_TARGETS), &rcT);
   POINT ptT = {rcT.left, rcT.top};
   ScreenToClient(hDlg, &ptT);
-  Move(IDC_LIST_TARGETS, ptT.x, ptT.y, btnX - m - ptT.x, rcT.bottom - rcT.top,
-       true);
+  // Width = rightEdge - maxRightColW - m - m
+  Move(IDC_LIST_TARGETS, m, ptT.y, cx - m - maxRightColW - m - m, rcT.bottom - rcT.top, true);
 
   // Result List
   RECT rcL;
@@ -673,8 +798,7 @@ void ResizeLayout(HWND hDlg, int cx, int cy) {
   ScreenToClient(hDlg, &ptL);
   // Height: cy - m - BottomRow - ptL.y
   int bottomRowH = 40;
-  Move(IDC_LIST_RESULTS, ptL.x, ptL.y, cx - m - ptL.x, cy - bottomRowH - ptL.y,
-       true);
+  Move(IDC_LIST_RESULTS, m, ptL.y, cx - m - m, cy - bottomRowH - ptL.y, true);
 
   // Bottom Row
   int bottomY = cy - 35;
