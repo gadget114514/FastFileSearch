@@ -373,7 +373,7 @@ void RemoveFolder(HWND hDlg) {
 
 std::wstring GetConfigPath(bool createDir) {
   wchar_t path[MAX_PATH];
-  if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT,
+  if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT,
                                  path))) {
     std::wstring dir = std::wstring(path) + L"\\FastFileSearch";
     if (createDir) {
