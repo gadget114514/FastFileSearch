@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Fast File Search"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppPublisher "gadget114514"
 #define MyAppURL "https://github.com/gadget114514/FastFileSearch"
 #define MyAppExeName "FastFileSearch.exe"

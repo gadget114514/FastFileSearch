@@ -34,6 +34,7 @@ BEGIN
     POPUP "Context"
     BEGIN
         MENUITEM "Copy Path", ID_POPUP_COPYPATH
+        MENUITEM "Open in File Explorer", ID_POPUP_OPENFOLDER
     END
 END
 

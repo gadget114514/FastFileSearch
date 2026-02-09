@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include <windows.h>
+#include <shellapi.h>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "shell32.lib")
@@ -48,6 +49,7 @@ bool sortAscending = true;
 // Subclassing Globals for Startup Fix
 WNDPROC oldEditProc = NULL;
 WNDPROC oldListProc = NULL;
+WNDPROC oldTargetListProc = NULL;
 bool isStartupGuarded = true;
 
 // Guarded Procedures to ignore disruptive messages during startup
@@ -75,6 +77,15 @@ LRESULT CALLBACK GuardedListProc(HWND hWnd, UINT uMsg, WPARAM wParam,
       return 0;
   }
   return CallWindowProc(oldListProc, hWnd, uMsg, wParam, lParam);
+}
+
+LRESULT CALLBACK TargetListProc(HWND hWnd, UINT uMsg, WPARAM wParam,
+                                LPARAM lParam) {
+  if (uMsg == WM_KEYDOWN && wParam == VK_DELETE) {
+    SendMessage(GetParent(hWnd), WM_COMMAND, IDC_BTN_REMOVE, 0);
+    return 0;
+  }
+  return CallWindowProc(oldTargetListProc, hWnd, uMsg, wParam, lParam);
 }
 
 // Prototypes
@@ -1014,6 +1025,8 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
     ListView_SetExtendedListViewStyle(hList,
                                       LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
     hTargetList = GetDlgItem(hDlg, IDC_LIST_TARGETS);
+    oldTargetListProc = (WNDPROC)SetWindowLongPtr(hTargetList, GWLP_WNDPROC,
+                                                  (LONG_PTR)TargetListProc);
 
     // Setup Columns
     LVCOLUMN lvc;
@@ -1264,7 +1277,16 @@ INT_PTR CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam,
               GlobalUnlock(hMem);
               SetClipboardData(CF_UNICODETEXT, hMem);
               CloseClipboard();
+              SetClipboardData(CF_UNICODETEXT, hMem);
+              CloseClipboard();
             }
+          } else if (cmd == ID_POPUP_OPENFOLDER) {
+            wchar_t buf[MAX_PATH];
+            ListView_GetItemText(hList, pnmitem->iItem, 1, buf, MAX_PATH);
+
+            std::wstring param = L"/select,\"" + std::wstring(buf) + L"\"";
+            ShellExecuteW(NULL, L"open", L"explorer.exe", param.c_str(), NULL,
+                          SW_SHOW);
           }
         }
       }
