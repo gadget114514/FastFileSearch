@@ -70,9 +70,30 @@
 4. **Encoding**:
    - For FAT/exFAT drives with non-ASCII filenames, you can manually select the Code Page (e.g., Shift-JIS, UTF-8) if automatic detection fails.
 
-## 🔧 Debugging & Console Tool
+## 🔧 CLI Tool (`ffs`)
 
-The project includes `test_console.exe` for low-level diagnostics.
+The project includes `ffs` — a command-line interface for regex-based file search, designed for use from scripts and AI CLI tools.
+
+**Command**: `ffs <pattern> [drive|folder]`
+
+| Argument | Description |
+| :--- | :--- |
+| `<pattern>` | Regex pattern to match file names (case-insensitive). |
+| `[drive\|folder]` | Drive (e.g. `C:`) or folder path. Default: current directory. |
+| `-h`, `--help` | Show help message. |
+
+Outputs the full path of each matching file, one per line — ideal for piping to other tools.
+
+**Examples**:
+```cmd
+ffs ".*\.cpp$"                # Find .cpp files in current folder
+ffs ".*\.exe$" D:             # Find .exe files on D: drive
+ffs "test_.*" C:\Projects     # Find files starting with "test_" in C:\Projects
+```
+
+## 🔬 Debugging & Console Tool
+
+The project also includes `test_console.exe` for low-level diagnostics.
 
 **Command**: `test_console.exe [Options] [Drive] [Query]`
 

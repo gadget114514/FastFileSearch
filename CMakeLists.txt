@@ -73,3 +73,31 @@ endif()
 target_link_options(test_console PRIVATE 
     /MANIFEST:NO
 )
+
+add_executable(ffs
+    src/cli_main.cpp
+    src/MFTReader.cpp
+    src/MFTReader.h
+    src/NtfsStructs.h
+    src/FatReader.cpp
+    src/FatReader.h
+    src/FatStructs.h
+    src/exFatReader.cpp
+    src/exFatReader.h
+    src/exFatStructs.h
+)
+target_link_libraries(ffs
+    kernel32
+    user32
+)
+target_compile_definitions(ffs PRIVATE 
+    UNICODE 
+    _UNICODE 
+    _CRT_SECURE_NO_WARNINGS
+)
+if(MSVC)
+    target_compile_options(ffs PRIVATE /W4 /EHsc /utf-8)
+endif()
+target_link_options(ffs PRIVATE 
+    /MANIFEST:NO
+)
