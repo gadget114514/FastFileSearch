@@ -1,8 +1,83 @@
 #include "MFTReader.h"
+#include <algorithm>
 #include <iostream>
 #include <regex>
 #include <sstream>
+#include <utility>
 #include <vector>
+
+namespace {
+
+// Largest record / read chunk we accept. Also the Scan read buffer size.
+constexpr uint32_t kReadBufferSize = 1024 * 1024; // 1MB
+// Bounded retry count for transient sector errors (ERROR_CRC/ERROR_IO_DEVICE).
+constexpr int kMaxTransientRetries = 3;
+
+// Runs a callable on scope exit (used to clear scanDebugCallback on every path).
+template <class F> class ScopeExit {
+public:
+  explicit ScopeExit(F f) : f_(std::move(f)) {}
+  ~ScopeExit() { f_(); }
+  ScopeExit(const ScopeExit &) = delete;
+  ScopeExit &operator=(const ScopeExit &) = delete;
+
+private:
+  F f_;
+};
+
+bool IsTransientIoError(DWORD err) {
+  return err == ERROR_CRC || err == ERROR_IO_DEVICE;
+}
+
+// Seeks to an absolute byte offset. Returns false on failure (GetLastError set).
+bool SeekAbsolute(HANDLE h, uint64_t offset) {
+  if (offset > static_cast<uint64_t>(INT64_MAX)) {
+    ::SetLastError(ERROR_SEEK);
+    return false;
+  }
+  LARGE_INTEGER li;
+  li.QuadPart = static_cast<LONGLONG>(offset);
+  return SetFilePointerEx(h, li, NULL, FILE_BEGIN) != FALSE;
+}
+
+// Reads exactly `size` bytes at `offset`, looping over short reads and
+// retrying transient sector errors a bounded number of times.
+// On return, `outRead` holds the bytes actually read. The result is false on
+// seek failure or an unrecoverable read error; a short count with true means
+// EOF was reached first.
+bool ReadFully(HANDLE h, uint64_t offset, uint8_t *dst, DWORD size,
+               DWORD &outRead) {
+  outRead = 0;
+  if (!SeekAbsolute(h, offset))
+    return false;
+
+  DWORD total = 0;
+  int retries = 0;
+  while (total < size) {
+    DWORD got = 0;
+    if (!ReadFile(h, dst + total, size - total, &got, NULL)) {
+      DWORD err = GetLastError();
+      if (IsTransientIoError(err) && retries < kMaxTransientRetries) {
+        ++retries;
+        Sleep(10);
+        if (!SeekAbsolute(h, offset + total)) {
+          outRead = total;
+          return false;
+        }
+        continue;
+      }
+      outRead = total;
+      return false;
+    }
+    if (got == 0)
+      break; // EOF
+    total += got;
+  }
+  outRead = total;
+  return true;
+}
+
+} // namespace
 
 // Helper to decode NTFS Data Runs
 struct DataRun {
@@ -11,7 +86,8 @@ struct DataRun {
 };
 
 MFTReader::MFTReader()
-    : hVolume(INVALID_HANDLE_VALUE), currentDrive(0), mftStartLcn(0) {}
+    : hVolume(INVALID_HANDLE_VALUE), currentDrive(0), mftStartLcn(0),
+      bytesPerCluster(0), recordSize(0) {}
 
 MFTReader::~MFTReader() { Close(); }
 
@@ -19,15 +95,19 @@ std::wstring MFTReader::GetLastErrorMessage() const { return lastError; }
 
 void MFTReader::SetError(const std::wstring &msg) {
   DWORD err = GetLastError();
-  LPVOID lpMsgBuf;
-  FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-                     FORMAT_MESSAGE_IGNORE_INSERTS,
-                 NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                 (LPWSTR)&lpMsgBuf, 0, NULL);
+  LPVOID lpMsgBuf = nullptr;
+  DWORD len = FormatMessageW(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+          FORMAT_MESSAGE_IGNORE_INSERTS,
+      NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      (LPWSTR)&lpMsgBuf, 0, NULL);
 
-  lastError = msg + L": " + (lpMsgBuf ? (wchar_t *)lpMsgBuf : L"Unknown Error");
+  std::wstring sysText =
+      (len > 0 && lpMsgBuf) ? std::wstring((wchar_t *)lpMsgBuf)
+                            : std::wstring(L"Unknown Error");
   if (lpMsgBuf)
     LocalFree(lpMsgBuf);
+  lastError = msg + L": " + sysText;
 }
 
 void MFTReader::Close() {
@@ -73,6 +153,14 @@ bool MFTReader::Initialize(TCHAR driveLetter) {
   // Use BytesPerFileRecordSegment directly to avoid signed/unsigned confusion
   recordSize = volumeData.BytesPerFileRecordSegment;
 
+  // Shared failure path for corrupt or unusable volume geometry.
+  auto rejectGeometry = [this](const wchar_t *why) {
+    Close();
+    ::SetLastError(ERROR_INVALID_DATA);
+    SetError(std::wstring(L"Invalid NTFS geometry: ") + why);
+    return false;
+  };
+
   if (recordSize > 0) {
     if (traceCallback) {
       traceCallback(L"Spec Selection: BytesPerFileRecordSegment is valid (" +
@@ -88,27 +176,25 @@ bool MFTReader::Initialize(TCHAR driveLetter) {
                     std::to_wstring(clusters) + L")");
     }
 
-    if (clusters > 0x80000000) {
-      // Sign extended negative (e.g. 0xFFFFFFF6)
+    if ((clusters > 0x80000000) || (clusters >= 0x80 && clusters <= 0xFF)) {
+      // Negative 2^(-n) encoding: sign-extended (e.g. 0xFFFFFFF6) or raw byte
+      // (e.g. 0xF6). Only the low byte carries the exponent.
       int8_t val = (int8_t)clusters;
-      recordSize = 1 << (-val);
+      int shift = -(int)val;
+      if (shift < 0 || shift >= 32)
+        return rejectGeometry(L"record size exponent out of range");
+      recordSize = (uint32_t)(1ULL << shift);
       if (traceCallback) {
-        traceCallback(L"Spec Selection: Value is Sign-Extended Negative (" +
-                      std::to_wstring(val) + L"). Formula 2^(-n) -> " +
-                      std::to_wstring(recordSize) + L" bytes.");
-      }
-    } else if (clusters >= 0x80 && clusters <= 0xFF) {
-      // Raw byte negative (e.g. 0xF6) treated as unsigned 32-bit
-      int8_t val = (int8_t)clusters;
-      recordSize = 1 << (-val);
-      if (traceCallback) {
-        traceCallback(L"Spec Selection: Value is Raw Negative Byte (" +
+        traceCallback(L"Spec Selection: Value is Negative Exponent (" +
                       std::to_wstring((int)val) + L"). Formula 2^(-n) -> " +
                       std::to_wstring(recordSize) + L" bytes.");
       }
     } else {
       // Standard cluster count
-      recordSize = clusters * bytesPerCluster;
+      uint64_t bytes64 = (uint64_t)clusters * bytesPerCluster;
+      if (bytes64 > kReadBufferSize)
+        return rejectGeometry(L"record size exceeds read buffer");
+      recordSize = (uint32_t)bytes64;
       if (traceCallback) {
         traceCallback(L"Spec Selection: Value is Standard Cluster Count (" +
                       std::to_wstring(clusters) +
@@ -117,6 +203,15 @@ bool MFTReader::Initialize(TCHAR driveLetter) {
       }
     }
   }
+
+  if (bytesPerCluster == 0)
+    return rejectGeometry(L"bytes per cluster is zero");
+  if (recordSize == 0)
+    return rejectGeometry(L"record size is zero");
+  if (recordSize < sizeof(FILE_RECORD_HEADER))
+    return rejectGeometry(L"record size smaller than FILE record header");
+  if (recordSize > kReadBufferSize)
+    return rejectGeometry(L"record size exceeds read buffer");
 
   if (traceCallback)
     traceCallback(
@@ -127,10 +222,14 @@ bool MFTReader::Initialize(TCHAR driveLetter) {
   return true;
 }
 
-std::vector<DataRun> DecodeDataRuns(const uint8_t *runList, uint64_t maxLen) {
-  std::vector<DataRun> runs;
-  uint64_t currentLcn = 0;
-  size_t offset = 0;
+// Decodes an NTFS run list into `out`. Returns false on corrupt metadata
+// (length/offset field wider than 8 bytes, or an LCN that goes negative or
+// overflows). A run list truncated by maxLen simply ends the list.
+static bool DecodeDataRuns(const uint8_t *runList, uint64_t maxLen,
+                           std::vector<DataRun> &out) {
+  out.clear();
+  int64_t currentLcn = 0;
+  uint64_t offset = 0;
 
   while (offset < maxLen) {
     uint8_t header = runList[offset++];
@@ -140,102 +239,145 @@ std::vector<DataRun> DecodeDataRuns(const uint8_t *runList, uint64_t maxLen) {
     uint8_t lenBytes = header & 0xF;
     uint8_t offBytes = (header >> 4) & 0xF;
 
+    // Fields wider than 8 bytes cannot be represented in uint64/int64.
+    if (lenBytes > 8 || offBytes > 8)
+      return false;
+
     if (offset + lenBytes + offBytes > maxLen)
       break;
 
     uint64_t length = 0;
-    for (int i = 0; i < lenBytes; i++) {
+    for (unsigned i = 0; i < lenBytes; i++) {
       length |= (uint64_t)runList[offset++] << (i * 8);
     }
 
-    int64_t lcnOffset = 0;
-    for (int i = 0; i < offBytes; i++) {
-      lcnOffset |= (uint64_t)runList[offset++] << (i * 8);
+    uint64_t rawOffset = 0;
+    for (unsigned i = 0; i < offBytes; i++) {
+      rawOffset |= (uint64_t)runList[offset++] << (i * 8);
     }
 
-    // Sign extend LCN offset
-    if (offBytes > 0 && (lcnOffset & (1LL << ((offBytes * 8) - 1)))) {
-      for (int i = offBytes; i < 8; i++) {
-        lcnOffset |= (0xFFLL << (i * 8));
-      }
+    // Sign extend LCN offset (unsigned arithmetic avoids signed-shift UB).
+    int64_t lcnOffset = (int64_t)rawOffset;
+    if (offBytes > 0 && offBytes < 8 &&
+        (rawOffset & (1ULL << ((offBytes * 8) - 1)))) {
+      lcnOffset = (int64_t)(rawOffset | (~0ULL << (offBytes * 8)));
     }
 
+    // Overflow-checked signed addition.
+    if ((lcnOffset > 0 && currentLcn > INT64_MAX - lcnOffset) ||
+        (lcnOffset < 0 && currentLcn < INT64_MIN - lcnOffset))
+      return false;
     currentLcn += lcnOffset;
-    runs.push_back({(uint64_t)currentLcn, length});
+
+    // A negative absolute LCN is never valid.
+    if (currentLcn < 0)
+      return false;
+
+    out.push_back({(uint64_t)currentLcn, length});
   }
-  return runs;
+  return true;
 }
 
 bool MFTReader::Scan(void (*progressCallback)(int, int, void *), void *userData,
                      std::function<void(const std::wstring &)> onFileFound) {
   scanDebugCallback = onFileFound;
+  // Clears the debug callback on every return path below.
+  ScopeExit clearDebugCallback([this] { scanDebugCallback = nullptr; });
+
   if (hVolume == INVALID_HANDLE_VALUE) {
     lastError = L"Volume not initialized";
+    return false;
+  }
+  if (recordSize == 0 || bytesPerCluster == 0) {
+    lastError = L"Invalid volume geometry";
     return false;
   }
 
   // 1. Read Record 0 ($MFT) to find the runs
   if (traceCallback)
     traceCallback(L"Scan: Reading $MFT record...");
+  if (mftStartLcn > UINT64_MAX / bytesPerCluster) {
+    ::SetLastError(ERROR_INVALID_DATA);
+    SetError(L"Corrupt $MFT start LCN");
+    return false;
+  }
   uint64_t mftOffset = mftStartLcn * bytesPerCluster;
   std::vector<uint8_t> buffer(recordSize);
 
-  LARGE_INTEGER li;
-  li.QuadPart = mftOffset;
-  if (!SetFilePointerEx(hVolume, li, NULL, FILE_BEGIN)) {
-    SetError(L"Failed to seek to MFT start");
+  DWORD bytesRead = 0;
+  if (!ReadFully(hVolume, mftOffset, buffer.data(), recordSize, bytesRead)) {
+    SetError(L"Failed to read MFT Header");
     return false;
   }
-
-  DWORD bytesRead;
-  if (!ReadFile(hVolume, buffer.data(), recordSize, &bytesRead, NULL) ||
-      bytesRead != recordSize) {
-    SetError(L"Failed to read MFT Header");
+  if (bytesRead != recordSize) {
+    ::SetLastError(ERROR_HANDLE_EOF);
+    SetError(L"Short read of MFT Header");
+    return false;
+  }
+  if (IsCancelRequested()) {
+    lastError = L"Scan cancelled";
     return false;
   }
 
   FILE_RECORD_HEADER *fr = (FILE_RECORD_HEADER *)buffer.data();
-  if (fr->Magic != 0x454C4946)
-    return false; // "FILE"
+  if (fr->Magic != 0x454C4946) { // "FILE"
+    ::SetLastError(ERROR_INVALID_DATA);
+    SetError(L"Invalid $MFT record signature");
+    return false;
+  }
+
+  // Bound every attribute walk by the used part of the record, clamped to the
+  // buffer actually read.
+  const uint32_t usedSize = (std::min<uint32_t>)(fr->RealSize, recordSize);
+  if ((uint32_t)fr->AttributeOffset + sizeof(ATTRIBUTE_HEADER) > usedSize) {
+    ::SetLastError(ERROR_INVALID_DATA);
+    SetError(L"Invalid attribute offset in $MFT record");
+    return false;
+  }
+  const uint8_t *recordEnd = buffer.data() + usedSize;
 
   // Find DATA attribute (0x80)
   std::vector<DataRun> runs;
   uint8_t *attrCursor = buffer.data() + fr->AttributeOffset;
 
-  while (attrCursor < buffer.data() + fr->RealSize) {
+  while (attrCursor + sizeof(ATTRIBUTE_HEADER) <= recordEnd) {
     ATTRIBUTE_HEADER *ah = (ATTRIBUTE_HEADER *)attrCursor;
-    if (ah->TypeID == 0xFFFFFFFF)
+    if (ah->TypeID == AttributeEnd)
       break;
-    if (ah->Length == 0)
-      break;
+    if (ah->Length < sizeof(ATTRIBUTE_HEADER) ||
+        ah->Length > (size_t)(recordEnd - attrCursor)) {
+      ::SetLastError(ERROR_INVALID_DATA);
+      SetError(L"Invalid attribute length in $MFT record");
+      return false;
+    }
 
     if (ah->TypeID == AttributeData) { // 0x80
       if (ah->NonResidentFlag) {
-        // Safety: Check if header is large enough
-        if (ah->Length < 0x40) { // Non-resident header size is usually 0x40
+        // Non-resident header is 0x40 bytes; the fields read below need it.
+        if (ah->Length < 0x40) {
+          ::SetLastError(ERROR_INVALID_DATA);
           SetError(L"Data attribute too short");
           return false;
         }
 
-        // Non-resident: Parse runs
-        uint64_t startVcn = *(uint64_t *)(attrCursor + 0x10);
-        uint64_t lastVcn = *(uint64_t *)(attrCursor + 0x18);
         uint16_t runOffset = *(uint16_t *)(attrCursor + 0x20);
-
         if (runOffset >= ah->Length) {
+          ::SetLastError(ERROR_INVALID_DATA);
           SetError(L"Invalid Run Offset");
           return false;
         }
 
-        // Run list is at attrCursor + runOffset
-        // But wait, the attribute might be very large?
-        // Usually for MFT record it fits in 1KB.
-        // We decode from attrCursor + runOffset
+        // Run list is at attrCursor + runOffset, bounded by the attribute.
         if (traceCallback)
           traceCallback(L"Scan: Decoding Data Runs...");
-        runs = DecodeDataRuns(attrCursor + runOffset, ah->Length - runOffset);
+        if (!DecodeDataRuns(attrCursor + runOffset, ah->Length - runOffset,
+                            runs)) {
+          ::SetLastError(ERROR_INVALID_DATA);
+          SetError(L"Corrupt Data Runs for $MFT");
+          return false;
+        }
         if (runs.empty()) {
-          // If runs illegal?
+          ::SetLastError(ERROR_INVALID_DATA);
           SetError(L"Empty Data Runs for $MFT");
           return false;
         }
@@ -253,15 +395,17 @@ bool MFTReader::Scan(void (*progressCallback)(int, int, void *), void *userData,
     attrCursor += ah->Length;
   }
 
-  if (runs.empty())
+  if (runs.empty()) {
+    ::SetLastError(ERROR_INVALID_DATA);
+    SetError(L"$MFT has no non-resident DATA runs");
     return false;
+  }
 
   // 2. Read all runs
   if (traceCallback)
     traceCallback(L"Scan: Processing " + std::to_wstring(runs.size()) +
                   L" runs.");
-  const uint32_t BUFFER_SIZE = 1024 * 1024; // 1MB buffer
-  std::vector<uint8_t> readBuf(BUFFER_SIZE);
+  std::vector<uint8_t> readBuf(kReadBufferSize);
 
   // Estimate total records for progress
   uint64_t totalRecords = 0;
@@ -269,40 +413,48 @@ bool MFTReader::Scan(void (*progressCallback)(int, int, void *), void *userData,
     totalRecords += (r.Length * bytesPerCluster) / recordSize;
   uint64_t processedRecords = 0;
   bool firstChunkProcessed = false;
-  uint32_t totalRecordsRead = 0;
 
   for (auto &run : runs) {
+    if (IsCancelRequested()) {
+      lastError = L"Scan cancelled";
+      return false;
+    }
     if (traceCallback)
       traceCallback(L"Scan: Run LCN=" + std::to_wstring(run.LCN) + L", Len=" +
                     std::to_wstring(run.Length));
+    if (run.LCN > UINT64_MAX / bytesPerCluster ||
+        run.Length > UINT64_MAX / bytesPerCluster) {
+      ::SetLastError(ERROR_INVALID_DATA);
+      SetError(L"Corrupt $MFT data run");
+      return false;
+    }
     uint64_t runBytes = run.Length * bytesPerCluster;
     uint64_t runStart = run.LCN * bytesPerCluster;
     uint64_t currentOffset = 0;
 
-    LARGE_INTEGER seekPos;
-    seekPos.QuadPart = runStart;
-    SetFilePointerEx(hVolume, seekPos, NULL, FILE_BEGIN);
-
     while (currentOffset < runBytes) {
-      uint32_t toRead =
-          (uint32_t)min((uint64_t)BUFFER_SIZE, runBytes - currentOffset);
-      if (!ReadFile(hVolume, readBuf.data(), toRead, &bytesRead, NULL)) {
-        lastError = L"ReadFile failed";
+      if (IsCancelRequested()) {
+        lastError = L"Scan cancelled";
         return false;
       }
-
-      // Debug: Check if we read anything
-      // if (bytesRead == 0) break;
-
-      // We rely on bytesToRead vs bytesRead?
-      // MFT might be fragmented, so bytesRead might be less than bytesToRead?
-      // If bytesRead < recordSize, we can't parse a record.
-
-      if (bytesRead < recordSize) {
-        // Less than one record? End of MFT?
-        // Just break for now.
-        break;
+      uint32_t toRead = (uint32_t)(std::min)(
+          static_cast<uint64_t>(kReadBufferSize), runBytes - currentOffset);
+      DWORD chunkRead = 0;
+      if (!ReadFully(hVolume, runStart + currentOffset, readBuf.data(), toRead,
+                     chunkRead)) {
+        SetError(L"Failed to read $MFT data run");
+        return false;
       }
+      if (chunkRead != toRead) {
+        ::SetLastError(ERROR_HANDLE_EOF);
+        SetError(L"Short read of $MFT data run");
+        return false;
+      }
+      bytesRead = chunkRead;
+
+      // If bytesRead < recordSize, we can't parse a record: end of this run.
+      if (bytesRead < recordSize)
+        break;
 
       uint32_t recordsRead = bytesRead / recordSize;
       if (scanDebugCallback && !firstChunkProcessed) {
@@ -321,9 +473,10 @@ bool MFTReader::Scan(void (*progressCallback)(int, int, void *), void *userData,
       }
 
       currentOffset += bytesRead;
-      if (progressCallback && (processedRecords % 1000 == 0)) {
-        progressCallback((int)((processedRecords * 100) / totalRecords), 100,
-                         userData);
+      if (progressCallback && totalRecords > 0 &&
+          (processedRecords % 1000 == 0)) {
+        double pct = 100.0 * (double)processedRecords / (double)totalRecords;
+        progressCallback((int)(std::min)(pct, 100.0), 100, userData);
       }
     }
   }
@@ -331,7 +484,6 @@ bool MFTReader::Scan(void (*progressCallback)(int, int, void *), void *userData,
   if (progressCallback)
     progressCallback(100, 100, userData);
 
-  scanDebugCallback = nullptr;
   return true;
 }
 
@@ -357,12 +509,15 @@ void MFTReader::ParseRecord(const FILE_RECORD_HEADER *header) {
   entry.IsValid = false;
   entry.IsDirectory = (header->Flags & 0x02) != 0;
 
-  if (header->RealSize > recordSize)
-    return; // Corrupt record
+  // Corrupt record: used size must fit in the record and cover the header.
+  if (header->RealSize < sizeof(FILE_RECORD_HEADER) ||
+      header->RealSize > recordSize)
+    return;
   const uint8_t *ptr = (const uint8_t *)header;
   const uint8_t *end = ptr + header->RealSize;
 
-  if (header->AttributeOffset >= header->RealSize)
+  if ((uint32_t)header->AttributeOffset + sizeof(ATTRIBUTE_HEADER) >
+      header->RealSize)
     return;
   const ATTRIBUTE_HEADER *attr =
       (const ATTRIBUTE_HEADER *)(ptr + header->AttributeOffset);
@@ -371,14 +526,19 @@ void MFTReader::ParseRecord(const FILE_RECORD_HEADER *header) {
 
   while ((const uint8_t *)attr + sizeof(ATTRIBUTE_HEADER) <= end &&
          attr->TypeID != AttributeEnd) {
-    if (attr->Length == 0)
-      break; // Infinite loop prevention
+    // Length must cover at least the common header and stay inside the record
+    // (also guarantees forward progress).
+    if (attr->Length < sizeof(ATTRIBUTE_HEADER))
+      break;
     if ((const uint8_t *)attr + attr->Length > end)
       break; // OOB
 
     if (attr->TypeID == AttributeFileName) { // 0x30
       const FILE_NAME_ATTRIBUTE *fn;
-      if (!attr->NonResidentFlag) {
+      // Resident value offsets are read from the resident header, so require
+      // its full size before touching ValueOffset.
+      if (!attr->NonResidentFlag &&
+          attr->Length >= sizeof(RESIDENT_ATTRIBUTE_HEADER)) {
         const RESIDENT_ATTRIBUTE_HEADER *res =
             (const RESIDENT_ATTRIBUTE_HEADER *)attr;
 
@@ -404,7 +564,8 @@ void MFTReader::ParseRecord(const FILE_RECORD_HEADER *header) {
         }
       }
     } else if (attr->TypeID == AttributeStandardInformation) {
-      if (!attr->NonResidentFlag) {
+      if (!attr->NonResidentFlag &&
+          attr->Length >= sizeof(RESIDENT_ATTRIBUTE_HEADER)) {
         const RESIDENT_ATTRIBUTE_HEADER *res =
             (const RESIDENT_ATTRIBUTE_HEADER *)attr;
         if (res->ValueOffset + sizeof(STANDARD_INFORMATION) <= attr->Length) {
@@ -416,10 +577,12 @@ void MFTReader::ParseRecord(const FILE_RECORD_HEADER *header) {
       }
     } else if (attr->TypeID == AttributeData) { // 0x80
       if (!attr->NonResidentFlag) {
-        // Resident
-        const RESIDENT_ATTRIBUTE_HEADER *res =
-            (const RESIDENT_ATTRIBUTE_HEADER *)attr;
-        entry.Size = res->ValueLength;
+        // Resident: only read the value length if the full header fits.
+        if (attr->Length >= sizeof(RESIDENT_ATTRIBUTE_HEADER)) {
+          const RESIDENT_ATTRIBUTE_HEADER *res =
+              (const RESIDENT_ATTRIBUTE_HEADER *)attr;
+          entry.Size = res->ValueLength;
+        }
       } else {
         // Non-Resident
         // DataSize is at offset 0x30

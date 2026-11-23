@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-#include <vector>
 
 enum LanguageID {
   APP_LANG_ENGLISH = 0,
@@ -19,7 +18,8 @@ enum StringID {
   IDS_FILENAME_LABEL,
   IDS_STATUS_READY,
   IDS_STATUS_BUSY,
-  IDS_STATUS_FOUND_FMT,
+  IDS_STATUS_FOUND_FMT, // Contains a "%d" placeholder; see
+                        // Localization::FormatCount.
   IDS_COL_NAME,
   IDS_COL_PATH,
   IDS_COL_DATE,
@@ -68,6 +68,16 @@ enum StringID {
   IDS_MENU_CONTEXT,
   IDS_MENU_COPY_PATH,
 
+  // Error / message strings
+  IDS_ERR_ACCESS_DENIED_HINT,
+  IDS_ERR_UNKNOWN_SCAN,
+  IDS_MSG_NEED_CANDIDATE,
+  IDS_TITLE_INFO,
+  IDS_TITLE_ERROR,
+  IDS_STATUS_FAILED,
+  IDS_ERR_SAVE_FAILED,
+  IDS_ERR_CONFIG_SAVE_FAILED,
+
   IDS_STRING_COUNT
 };
 
@@ -75,9 +85,16 @@ class Localization {
 public:
   static void SetLanguage(LanguageID lang);
   static LanguageID GetLanguage();
+  // Returns a display string for the current language. The result is a
+  // translation for display only: never pass it as a printf format string.
+  // Out-of-range IDs return L"" (and assert in debug builds); missing
+  // translations fall back to English.
   static const wchar_t *GetString(StringID id);
   static const wchar_t *GetLanguageName(LanguageID lang);
   static int GetLanguageCount();
+  // Replaces the first "%d" in a localized template with |count|. Does not
+  // interpret the template as a format string.
+  static std::wstring FormatCount(StringID id, unsigned long long count);
 
 private:
   static LanguageID s_currentLang;

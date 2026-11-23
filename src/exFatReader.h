@@ -1,12 +1,13 @@
 #pragma once
 #include "MFTReader.h"
+#include "VolumeReaderCommon.h"
 #include "exFatStructs.h"
+#include <cstdint>
 #include <functional>
 #include <string>
-#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <windows.h>
-
 
 class exFatReader {
 public:
@@ -30,22 +31,24 @@ public:
   std::wstring GetLastErrorMessage() const;
 
 private:
+  using Entry = VolumeCommon::VolumeEntry;
+
+  // A subdirectory found while parsing; processed after its parent's entries.
+  struct PendingDir {
+    uint32_t cluster;
+    bool noFatChain;
+    uint64_t dataLength;
+    uint64_t key;
+  };
+
   std::wstring lastError;
   void SetError(const std::wstring &msg);
 
-  struct Entry {
-    uint32_t FirstCluster;
-    uint32_t ParentFirstCluster;
-    std::wstring Name;
-    uint64_t Size;
-    uint64_t LastWriteTime;
-    bool IsDirectory;
-    bool IsValid;
-  };
-
   HANDLE hVolume;
   TCHAR currentDrive;
-  std::unordered_map<uint32_t, Entry> fileMap;
+  VolumeCommon::EntryMap fileMap;
+  uint64_t nextSyntheticKey;
+  std::unordered_set<uint32_t> visitedClusters; // Cycle / cross-link guard
 
   std::function<void(const std::wstring &)> traceCallback;
 
@@ -55,14 +58,20 @@ private:
   uint32_t fatOffset;
   uint32_t fatLength;
   uint32_t rootDirectoryCluster;
+  uint64_t clusterCount;
 
-  void ProcessDirectory(uint32_t cluster, bool noFatChain, uint64_t dataLength,
-                        uint32_t parentCluster, const std::wstring &parentPath);
-  uint32_t GetNextCluster(uint32_t cluster);
+  // Progress State
+  uint64_t processedClusters;
+  void (*progressCb)(int, int, void *);
+  void *userPtr;
+
+  bool ProcessDirectory(uint32_t cluster, bool noFatChain, uint64_t dataLength,
+                        uint64_t parentKey, uint32_t depth);
+  bool ReadDirectoryBytes(uint32_t start, bool noFatChain, uint64_t dataLength,
+                          std::vector<uint8_t> &out);
+  void ParseEntrySets(const std::vector<uint8_t> &data, uint64_t parentKey,
+                      std::vector<PendingDir> &subdirs);
+  bool GetNextCluster(uint32_t cluster, uint32_t &next);
+  bool IsDataCluster(uint64_t cluster) const;
   uint64_t ClusterToSector(uint32_t cluster);
-
-  uint64_t FatTimestampToWin32(uint32_t timestamp, uint8_t tenMs);
-
-  bool MatchPattern(const std::wstring &str, const std::wstring &pattern,
-                    const SearchOptions &options);
 };

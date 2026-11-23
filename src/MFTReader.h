@@ -1,5 +1,6 @@
 #pragma once
 #include "NtfsStructs.h"
+#include <atomic>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -54,8 +55,14 @@ public:
 
   bool Initialize(TCHAR driveLetter);
   void Close();
+  // Scan aborts with false when cancellation has been requested. The flag is
+  // not cleared by Scan itself; call ResetCancel() before starting a new scan.
   bool Scan(void (*progressCallback)(int, int, void *), void *userData,
             std::function<void(const std::wstring &)> onFileFound = nullptr);
+  // Thread-safe: may be called from another thread while Scan is running.
+  void RequestCancel() { cancelRequested.store(true); }
+  void ResetCancel() { cancelRequested.store(false); }
+  bool IsCancelRequested() const { return cancelRequested.load(); }
   void SetTraceCallback(std::function<void(const std::wstring &)> callback) {
     traceCallback = callback;
   }
@@ -84,14 +91,13 @@ private:
   std::function<void(const std::wstring &)> scanDebugCallback; // For -v (files)
   std::function<void(const std::wstring &)> traceCallback; // For -t (stages)
 
+  std::atomic<bool> cancelRequested{false};
+
   // NTFS Volume Data
   uint64_t mftStartLcn;
-  uint64_t totalClusters;
-  uint32_t clustersPerRecord; // often < 0 if bytes.
   uint32_t bytesPerCluster;
   uint32_t recordSize;
 
-  void ProcessBuffer(const uint8_t *buffer, size_t size);
   void ParseRecord(const FILE_RECORD_HEADER *record);
   std::wstring BuildPath(uint64_t refId);
   bool MatchPattern(const std::wstring &str, const std::wstring &pattern,

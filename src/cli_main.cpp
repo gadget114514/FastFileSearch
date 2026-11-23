@@ -4,10 +4,13 @@
 #include "MFTReader.h"
 #include "exFatReader.h"
 #include <algorithm>
+#include <cwctype>
 #include <iostream>
 #include <locale.h>
+#include <regex>
 #include <string>
 #include <vector>
+#include <wchar.h>
 #include <windows.h>
 
 static void PrintHelp() {
@@ -25,6 +28,7 @@ static void PrintHelp() {
              << L"\n"
              << L"Options:\n"
              << L"  -h, --help      Show this help message\n"
+             << L"  --              Treat the following arguments as positional\n"
              << L"\n"
              << L"Examples:\n"
              << L"  ffs \".*\\\\.cpp$\"                Search current folder for "
@@ -33,6 +37,58 @@ static void PrintHelp() {
                 L"files\n"
              << L"  ffs \"test_.*\" C:\\Projects       Search C:\\Projects for "
                 L"files starting with test_\n";
+}
+
+// Converts a std::regex_error message (ASCII) to a wide string for wcerr.
+static std::wstring WidenMessage(const char *msg) {
+  int len = MultiByteToWideChar(CP_ACP, 0, msg, -1, nullptr, 0);
+  if (len <= 1)
+    return L"invalid regular expression";
+  std::wstring out(len - 1, L'\0');
+  MultiByteToWideChar(CP_ACP, 0, msg, -1, &out[0], len);
+  return out;
+}
+
+// Normalizes the target into an absolute "X:\..." path with a validated drive.
+// Returns false (after printing a diagnostic) if the target is unusable.
+static bool NormalizeTarget(const std::wstring &raw, std::wstring &target,
+                            wchar_t &drive) {
+  if (raw.empty()) {
+    std::wcerr << L"Error: target path is empty" << std::endl;
+    return false;
+  }
+
+  std::wstring work = raw;
+  // "C:" alone means the root of that drive, not its current directory.
+  if (work.size() == 2 && work[1] == L':')
+    work.push_back(L'\\');
+
+  DWORD needed = GetFullPathNameW(work.c_str(), 0, nullptr, nullptr);
+  if (needed == 0) {
+    std::wcerr << L"Error: cannot resolve target '" << raw << L"' ("
+               << GetLastError() << L")" << std::endl;
+    return false;
+  }
+  std::vector<wchar_t> buf(needed + 1, L'\0');
+  DWORD written = GetFullPathNameW(work.c_str(), (DWORD)buf.size(), buf.data(),
+                                   nullptr);
+  if (written == 0 || written >= buf.size()) {
+    std::wcerr << L"Error: cannot resolve target '" << raw << L"'" << std::endl;
+    return false;
+  }
+  target.assign(buf.data(), written);
+
+  // Drop a trailing separator unless this is a drive root ("X:\").
+  if (target.size() > 3 && target.back() == L'\\')
+    target.pop_back();
+
+  drive = (wchar_t)towupper(target[0]);
+  if (target.size() < 3 || target[1] != L':' || drive < L'A' || drive > L'Z') {
+    std::wcerr << L"Error: Invalid drive in target '" << raw << L"'"
+               << std::endl;
+    return false;
+  }
+  return true;
 }
 
 int wmain(int argc, wchar_t *argv[]) {
@@ -51,35 +107,75 @@ int wmain(int argc, wchar_t *argv[]) {
     return 1;
   }
 
-  std::wstring pattern = argv[1];
-  std::wstring target;
-
-  if (argc >= 3) {
-    target = argv[2];
-  } else {
-    wchar_t cwd[MAX_PATH];
-    if (GetCurrentDirectoryW(MAX_PATH, cwd)) {
-      target = cwd;
-    } else {
-      target = L"C:\\";
+  // Collect positionals. Anything starting with '-' is an option, and unknown
+  // options are rejected rather than being taken as a regex. "--" ends options.
+  std::vector<std::wstring> positionals;
+  bool optionsEnded = false;
+  for (int i = 1; i < argc; i++) {
+    std::wstring arg = argv[i];
+    if (!optionsEnded && arg == L"--") {
+      optionsEnded = true;
+      continue;
     }
+    if (!optionsEnded && arg.size() > 1 && arg[0] == L'-') {
+      std::wcerr << L"Error: unknown option '" << arg << L"'" << std::endl;
+      std::wcerr << L"Try 'ffs --help' for usage." << std::endl;
+      return 1;
+    }
+    positionals.push_back(arg);
   }
 
-  if (target.size() == 2 && target[1] == L':') {
-    target.push_back(L'\\');
+  if (positionals.empty()) {
+    std::wcerr << L"Error: missing <pattern>" << std::endl;
+    std::wcerr << L"Try 'ffs --help' for usage." << std::endl;
+    return 1;
   }
-
-  wchar_t drive = towupper(target[0]);
-  if (drive < L'A' || drive > L'Z') {
-    std::wcerr << L"Error: Invalid drive letter '" << target[0] << L"' from target '" << target << L"'" << std::endl;
+  if (positionals.size() > 2) {
+    std::wcerr << L"Error: unexpected argument '" << positionals[2] << L"'"
+               << std::endl;
+    std::wcerr << L"Try 'ffs --help' for usage." << std::endl;
     return 1;
   }
 
+  const std::wstring pattern = positionals[0];
+
+  // Validate the regex once, up front. The readers compile it per entry and
+  // treat syntax errors as "no match", so a bad pattern must be caught here.
+  const auto regexFlags = std::regex::ECMAScript | std::regex::icase;
+  try {
+    std::wregex probe(pattern, regexFlags);
+    (void)probe;
+  } catch (const std::regex_error &e) {
+    std::wcerr << L"Error: invalid regex '" << pattern << L"': "
+               << WidenMessage(e.what()) << std::endl;
+    return 1;
+  }
+
+  std::wstring rawTarget;
+  if (positionals.size() >= 2) {
+    rawTarget = positionals[1];
+  } else {
+    wchar_t cwd[MAX_PATH];
+    DWORD cwdLen = GetCurrentDirectoryW(MAX_PATH, cwd);
+    if (cwdLen == 0 || cwdLen >= MAX_PATH) {
+      std::wcerr << L"Error: cannot determine current directory ("
+                 << GetLastError() << L")" << std::endl;
+      return 1;
+    }
+    rawTarget = cwd;
+  }
+
+  std::wstring target;
+  wchar_t drive = 0;
+  if (!NormalizeTarget(rawTarget, target, drive))
+    return 1;
+
   wchar_t driveRoot[] = {drive, L':', L'\\', L'\0'};
-  wchar_t fsName[MAX_PATH];
+  wchar_t fsName[MAX_PATH] = {};
   if (!GetVolumeInformationW(driveRoot, NULL, 0, NULL, NULL, NULL, fsName,
                              MAX_PATH)) {
-    std::wcerr << L"Error: Cannot access volume '" << driveRoot << L"'" << std::endl;
+    std::wcerr << L"Error: Cannot access volume '" << driveRoot << L"' ("
+               << GetLastError() << L")" << std::endl;
     return 1;
   }
 

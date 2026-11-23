@@ -1,9 +1,14 @@
 #include "Localization.h"
 
+#include <cassert>
+
 LanguageID Localization::s_currentLang = APP_LANG_ENGLISH;
 
-// String Table: [Language][StringID]
-const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
+namespace {
+
+// String Table: [Language][StringID]. Internal linkage; read-only.
+// Every row must contain exactly IDS_STRING_COUNT entries.
+const wchar_t *const g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
     // APP_LANG_ENGLISH
     {
         L"Search",             // IDS_SEARCH
@@ -57,7 +62,17 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
         L"Search Options...", // IDS_MENU_SEARCH_OPTIONS
         L"About...",          // IDS_MENU_ABOUT
         L"Context",           // IDS_MENU_CONTEXT
-        L"Copy Path"          // IDS_MENU_COPY_PATH
+        L"Copy Path",         // IDS_MENU_COPY_PATH
+
+        // Errors / messages
+        L"Access denied. Run FastFileSearch as administrator to read raw volume data.", // IDS_ERR_ACCESS_DENIED_HINT
+        L"Unknown error or scan failed.",      // IDS_ERR_UNKNOWN_SCAN
+        L"Please add at least one search candidate.", // IDS_MSG_NEED_CANDIDATE
+        L"Info",                               // IDS_TITLE_INFO
+        L"FastFileSearch Error",               // IDS_TITLE_ERROR
+        L"Failed.",                            // IDS_STATUS_FAILED
+        L"Failed to save the results file.",   // IDS_ERR_SAVE_FAILED
+        L"Failed to save settings to the configuration file." // IDS_ERR_CONFIG_SAVE_FAILED
     },
     // APP_LANG_JAPANESE
     {
@@ -112,7 +127,17 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
         L"検索オプション...", // IDS_MENU_SEARCH_OPTIONS
         L"バージョン情報...", // IDS_MENU_ABOUT
         L"コンテキスト",      // IDS_MENU_CONTEXT
-        L"パスをコピー"       // IDS_MENU_COPY_PATH
+        L"パスをコピー",      // IDS_MENU_COPY_PATH
+
+        // Errors / messages
+        L"管理者として実行しないと生のボリュームデータにアクセスできません。FastFileSearch を管理者として実行してください。", // IDS_ERR_ACCESS_DENIED_HINT
+        L"不明なエラーまたはスキャンに失敗しました。", // IDS_ERR_UNKNOWN_SCAN
+        L"検索対象を少なくとも 1 つ追加してください。", // IDS_MSG_NEED_CANDIDATE
+        L"情報",                               // IDS_TITLE_INFO
+        L"FastFileSearch エラー",              // IDS_TITLE_ERROR
+        L"失敗しました。",                     // IDS_STATUS_FAILED
+        L"結果ファイルの保存に失敗しました。", // IDS_ERR_SAVE_FAILED
+        L"設定ファイルへの保存に失敗しました。" // IDS_ERR_CONFIG_SAVE_FAILED
     },
     // APP_LANG_CHINESE_SIMP
     {L"搜索", L"文件名:", L"就绪", L"正在搜索...", L"找到 %d 个项目", L"名称",
@@ -127,7 +152,12 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
      L"OK", L"Cancel",
      // Menu
      L"File", L"Config", L"Language", L"Help", L"Search Options...",
-     L"About...", L"Context", L"Copy Path"},
+     L"About...", L"Context", L"Copy Path",
+     // Errors / messages
+     L"拒绝访问。请以管理员身份运行 FastFileSearch 以读取原始卷数据。",
+     L"未知错误或扫描失败。", L"请至少添加一个搜索目标。", L"信息",
+     L"FastFileSearch 错误", L"失败。", L"保存结果文件失败。",
+     L"保存设置到配置文件失败。"},
     // APP_LANG_CHINESE_TRAD
     {L"搜尋", L"檔案名稱:", L"就緒", L"搜尋中...", L"找到 %d 個項目", L"名稱",
      L"路徑", L"修改日期", L"大小", L"儲存結果", L"搜尋目標:", L"新增資料夾",
@@ -141,7 +171,12 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
      L"OK", L"Cancel",
      // Menu
      L"File", L"Config", L"Language", L"Help", L"Search Options...",
-     L"About...", L"Context", L"Copy Path"},
+     L"About...", L"Context", L"Copy Path",
+     // Errors / messages
+     L"存取被拒。請以系統管理員身分執行 FastFileSearch 以讀取原始磁碟區資料。",
+     L"未知錯誤或掃描失敗。", L"請至少新增一個搜尋目標。", L"資訊",
+     L"FastFileSearch 錯誤", L"失敗。", L"儲存結果檔案失敗。",
+     L"儲存設定到設定檔失敗。"},
     // APP_LANG_SPANISH
     {L"Buscar", L"Nombre de archivo:", L"Listo", L"Buscando...",
      L"Encontrado %d elementos", L"Nombre", L"Ruta", L"Fecha de modificación",
@@ -156,7 +191,14 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
      L"OK", L"Cancel",
      // Menu
      L"File", L"Config", L"Language", L"Help", L"Search Options...",
-     L"About...", L"Context", L"Copy Path"},
+     L"About...", L"Context", L"Copy Path",
+     // Errors / messages
+     L"Acceso denegado. Ejecute FastFileSearch como administrador para leer los datos del volumen sin procesar.",
+     L"Error desconocido o fallo del escaneo.",
+     L"Agregue al menos un candidato de búsqueda.", L"Información",
+     L"Error de FastFileSearch", L"Error.",
+     L"No se pudo guardar el archivo de resultados.",
+     L"No se pudo guardar la configuración en el archivo de configuración."},
     // APP_LANG_FRENCH
     {L"Rechercher", L"Nom de fichier:", L"Prêt", L"Recherche en cours...",
      L"Trouvé %d éléments", L"Nom", L"Chemin", L"Date de modification",
@@ -171,7 +213,14 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
      L"OK", L"Cancel",
      // Menu
      L"File", L"Config", L"Language", L"Help", L"Search Options...",
-     L"About...", L"Context", L"Copy Path"},
+     L"About...", L"Context", L"Copy Path",
+     // Errors / messages
+     L"Accès refusé. Exécutez FastFileSearch en tant qu'administrateur pour lire les données brutes du volume.",
+     L"Erreur inconnue ou échec de l'analyse.",
+     L"Veuillez ajouter au moins un candidat de recherche.", L"Information",
+     L"Erreur FastFileSearch", L"Échec.",
+     L"Impossible d'enregistrer le fichier de résultats.",
+     L"Impossible d'enregistrer les paramètres dans le fichier de configuration."},
     // APP_LANG_GERMAN
     {L"Suchen", L"Dateiname:", L"Bereit", L"Suche...", L"%d Elemente gefunden",
      L"Name", L"Pfad", L"Änderungsdatum", L"Größe", L"Ergebnisse speichern",
@@ -186,7 +235,14 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
      L"OK", L"Cancel",
      // Menu
      L"File", L"Config", L"Language", L"Help", L"Search Options...",
-     L"About...", L"Context", L"Copy Path"},
+     L"About...", L"Context", L"Copy Path",
+     // Errors / messages
+     L"Zugriff verweigert. Starten Sie FastFileSearch als Administrator, um die Rohdaten des Volumes zu lesen.",
+     L"Unbekannter Fehler oder Suche fehlgeschlagen.",
+     L"Bitte fügen Sie mindestens einen Suchkandidaten hinzu.", L"Info",
+     L"FastFileSearch-Fehler", L"Fehlgeschlagen.",
+     L"Ergebnisdatei konnte nicht gespeichert werden.",
+     L"Einstellungen konnten nicht in der Konfigurationsdatei gespeichert werden."},
     // APP_LANG_PORTUGUESE
     {L"Pesquisar", L"Nome do arquivo:", L"Pronto", L"Pesquisando...",
      L"Encontrado %d itens", L"Nome", L"Caminho", L"Data de modificação",
@@ -201,16 +257,21 @@ const wchar_t *g_Strings[APP_LANG_COUNT][IDS_STRING_COUNT] = {
      L"OK", L"Cancel",
      // Menu
      L"File", L"Config", L"Language", L"Help", L"Search Options...",
-     L"About...", L"Context", L"Copy Path"}};
+     L"About...", L"Context", L"Copy Path",
+     // Errors / messages
+     L"Acesso negado. Execute o FastFileSearch como administrador para ler os dados brutos do volume.",
+     L"Erro desconhecido ou falha na verificação.",
+     L"Adicione pelo menos um candidato de pesquisa.", L"Informação",
+     L"Erro do FastFileSearch", L"Falhou.",
+     L"Não foi possível salvar o arquivo de resultados.",
+     L"Não foi possível salvar as configurações no arquivo de configuração."}};
 
-const wchar_t *g_LangNames[APP_LANG_COUNT] = {L"English",
-                                              L"Japanese",
-                                              L"Chinese (Simplified)",
-                                              L"Chinese (Traditional)",
-                                              L"Spanish",
-                                              L"French",
-                                              L"German",
-                                              L"Portuguese"};
+const wchar_t *const g_LangNames[APP_LANG_COUNT] = {
+    L"English",          L"Japanese",       L"Chinese (Simplified)",
+    L"Chinese (Traditional)", L"Spanish",   L"French",
+    L"German",           L"Portuguese"};
+
+} // namespace
 
 void Localization::SetLanguage(LanguageID lang) {
   if (lang < 0 || lang >= APP_LANG_COUNT)
@@ -222,9 +283,27 @@ void Localization::SetLanguage(LanguageID lang) {
 LanguageID Localization::GetLanguage() { return s_currentLang; }
 
 const wchar_t *Localization::GetString(StringID id) {
-  if (id < 0 || id >= IDS_STRING_COUNT)
+  const int index = static_cast<int>(id);
+  if (index < 0 || index >= static_cast<int>(IDS_STRING_COUNT)) {
+    assert(false && "Localization::GetString: string ID out of range");
     return L"";
-  return g_Strings[s_currentLang][id];
+  }
+  const wchar_t *text = g_Strings[s_currentLang][index];
+  if (!text) // Missing translation: fall back to English.
+    text = g_Strings[APP_LANG_ENGLISH][index];
+  return text ? text : L"";
+}
+
+std::wstring Localization::FormatCount(StringID id, unsigned long long count) {
+  std::wstring text = GetString(id);
+  const std::wstring number = std::to_wstring(count);
+  const std::wstring placeholder = L"%d";
+  const size_t pos = text.find(placeholder);
+  if (pos != std::wstring::npos)
+    text.replace(pos, placeholder.size(), number);
+  else
+    text += L" " + number;
+  return text;
 }
 
 const wchar_t *Localization::GetLanguageName(LanguageID lang) {
